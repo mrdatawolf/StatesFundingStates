@@ -8,7 +8,7 @@ States Funding States pulls federal spending, IRS tax receipts, and Census popul
 
 ## Screenshot
 
-![States Funding States dashboard showing the data table, choropleth map, and charts](docs/Screenshot From 2026-05-21 16-37-39.png)
+![States Funding States dashboard showing the data table, choropleth map, and charts](docs/screenshot.png)
 
 ---
 
