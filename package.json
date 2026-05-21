@@ -1,0 +1,17 @@
+{
+  "name": "states-funding-states",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "db:generate": "pnpm --filter @sfs/db generate",
+    "db:migrate": "pnpm --filter @sfs/db migrate",
+    "db:seed": "pnpm --filter @sfs/db seed",
+    "dev:api": "pnpm --filter @sfs/api dev",
+    "dev:web": "pnpm --filter @sfs/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

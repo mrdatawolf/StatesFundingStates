@@ -1,0 +1,516 @@
+{
+  "id": "78195ac4-c714-4da9-b109-39757be99a7a",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.states": {
+      "name": "states",
+      "schema": "",
+      "columns": {
+        "fips": {
+          "name": "fips",
+          "type": "char(2)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "abbreviation": {
+          "name": "abbreviation",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "states_abbreviation_unique": {
+          "name": "states_abbreviation_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "abbreviation"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ingest_runs": {
+      "name": "ingest_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source": {
+          "name": "source",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year": {
+          "name": "fiscal_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "triggered_by": {
+          "name": "triggered_by",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.raw_federal_spending": {
+      "name": "raw_federal_spending",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ingest_run_id": {
+          "name": "ingest_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_fips": {
+          "name": "state_fips",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year": {
+          "name": "fiscal_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "raw_federal_spending_ingest_run_id_ingest_runs_id_fk": {
+          "name": "raw_federal_spending_ingest_run_id_ingest_runs_id_fk",
+          "tableFrom": "raw_federal_spending",
+          "tableTo": "ingest_runs",
+          "columnsFrom": [
+            "ingest_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "raw_federal_spending_state_fips_states_fips_fk": {
+          "name": "raw_federal_spending_state_fips_states_fips_fk",
+          "tableFrom": "raw_federal_spending",
+          "tableTo": "states",
+          "columnsFrom": [
+            "state_fips"
+          ],
+          "columnsTo": [
+            "fips"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "raw_spending_unique": {
+          "name": "raw_spending_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "ingest_run_id",
+            "state_fips",
+            "fiscal_year",
+            "category"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.raw_tax_receipts": {
+      "name": "raw_tax_receipts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ingest_run_id": {
+          "name": "ingest_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_fips": {
+          "name": "state_fips",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year": {
+          "name": "fiscal_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_type": {
+          "name": "tax_type",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "raw_tax_receipts_ingest_run_id_ingest_runs_id_fk": {
+          "name": "raw_tax_receipts_ingest_run_id_ingest_runs_id_fk",
+          "tableFrom": "raw_tax_receipts",
+          "tableTo": "ingest_runs",
+          "columnsFrom": [
+            "ingest_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "raw_tax_receipts_state_fips_states_fips_fk": {
+          "name": "raw_tax_receipts_state_fips_states_fips_fk",
+          "tableFrom": "raw_tax_receipts",
+          "tableTo": "states",
+          "columnsFrom": [
+            "state_fips"
+          ],
+          "columnsTo": [
+            "fips"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "raw_tax_unique": {
+          "name": "raw_tax_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "ingest_run_id",
+            "state_fips",
+            "fiscal_year",
+            "tax_type"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.raw_population": {
+      "name": "raw_population",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ingest_run_id": {
+          "name": "ingest_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_fips": {
+          "name": "state_fips",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "census_year": {
+          "name": "census_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "population": {
+          "name": "population",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "raw_population_ingest_run_id_ingest_runs_id_fk": {
+          "name": "raw_population_ingest_run_id_ingest_runs_id_fk",
+          "tableFrom": "raw_population",
+          "tableTo": "ingest_runs",
+          "columnsFrom": [
+            "ingest_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "raw_population_state_fips_states_fips_fk": {
+          "name": "raw_population_state_fips_states_fips_fk",
+          "tableFrom": "raw_population",
+          "tableTo": "states",
+          "columnsFrom": [
+            "state_fips"
+          ],
+          "columnsTo": [
+            "fips"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "raw_population_unique": {
+          "name": "raw_population_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "state_fips",
+            "census_year"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.state_balances": {
+      "name": "state_balances",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "state_fips": {
+          "name": "state_fips",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year": {
+          "name": "fiscal_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_received_cents": {
+          "name": "total_received_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_paid_in_cents": {
+          "name": "total_paid_in_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "net_cents": {
+          "name": "net_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "population": {
+          "name": "population",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "net_per_capita_cents": {
+          "name": "net_per_capita_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "spending_run_id": {
+          "name": "spending_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_run_id": {
+          "name": "tax_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "state_balances_state_fips_states_fips_fk": {
+          "name": "state_balances_state_fips_states_fips_fk",
+          "tableFrom": "state_balances",
+          "tableTo": "states",
+          "columnsFrom": [
+            "state_fips"
+          ],
+          "columnsTo": [
+            "fips"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "state_balances_spending_run_id_ingest_runs_id_fk": {
+          "name": "state_balances_spending_run_id_ingest_runs_id_fk",
+          "tableFrom": "state_balances",
+          "tableTo": "ingest_runs",
+          "columnsFrom": [
+            "spending_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "state_balances_tax_run_id_ingest_runs_id_fk": {
+          "name": "state_balances_tax_run_id_ingest_runs_id_fk",
+          "tableFrom": "state_balances",
+          "tableTo": "ingest_runs",
+          "columnsFrom": [
+            "tax_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "state_balance_unique": {
+          "name": "state_balance_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "state_fips",
+            "fiscal_year"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "net_cents_check": {
+          "name": "net_cents_check",
+          "value": "\"state_balances\".\"net_cents\" = \"state_balances\".\"total_received_cents\" - \"state_balances\".\"total_paid_in_cents\""
+        },
+        "per_capita_null_parity": {
+          "name": "per_capita_null_parity",
+          "value": "(\"state_balances\".\"population\" IS NULL) = (\"state_balances\".\"net_per_capita_cents\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
