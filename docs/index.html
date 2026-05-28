@@ -202,6 +202,32 @@
       flex-shrink: 0;
     }
 
+    /* ── Scroll hint ── */
+    #scroll-hint {
+      position: fixed;
+      bottom: 2.75rem;
+      right: 1.25rem;
+      width: 34px;
+      height: 34px;
+      background: rgba(26, 26, 46, 0.72);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      animation: hint-bounce 1.6s ease-in-out infinite;
+      transition: opacity 0.4s ease;
+      z-index: 50;
+    }
+    #scroll-hint.hidden { opacity: 0; }
+    #scroll-hint svg { width: 18px; height: 18px; }
+
+    @keyframes hint-bounce {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(5px); }
+    }
+
     /* ── Responsive ── */
     @media (max-width: 900px) {
       body   { height: auto; overflow: auto; }
@@ -276,6 +302,12 @@
 </footer>
 
 <div id="tip"></div>
+
+<div id="scroll-hint">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+</div>
 
 <script>
 // ── App state ─────────────────────────────────────────────────────────────────
@@ -578,6 +610,23 @@ function renderBarChart(rows) {
     .on('mouseleave', hideTip);
 }
 
+// ── Scroll hint ───────────────────────────────────────────────────────────────
+const scrollHint   = document.getElementById('scroll-hint');
+const chartsCol    = document.querySelector('.charts-col');
+
+function hideScrollHint() { scrollHint.classList.add('hidden'); }
+function showScrollHint() { scrollHint.classList.remove('hidden'); }
+
+chartsCol.addEventListener('scroll', hideScrollHint, { once: true });
+
+// Re-show (and re-arm) when the user changes year or metric so the hint
+// reappears after new content renders and the column scrolls back to top.
+function resetScrollHint() {
+  chartsCol.scrollTop = 0;
+  showScrollHint();
+  chartsCol.addEventListener('scroll', hideScrollHint, { once: true });
+}
+
 // ── Sort wiring (table column headers) ───────────────────────────────────────
 document.querySelectorAll('thead th[data-k]').forEach(th => {
   th.addEventListener('click', () => {
@@ -592,14 +641,16 @@ document.querySelectorAll('thead th[data-k]').forEach(th => {
 document.getElementById('yr').addEventListener('change', e => {
   year = +e.target.value;
   render();
+  resetScrollHint();
 });
 
 // ── Metric selector — drives map, bar chart, and table sort ──────────────────
 document.getElementById('metric-sel').addEventListener('change', e => {
   metric  = e.target.value;
-  sortKey = metric;      // table sort follows the active metric
+  sortKey = metric;
   sortDir = 'desc';
   render();
+  resetScrollHint();
 });
 
 // ── State filter ──────────────────────────────────────────────────────────────
