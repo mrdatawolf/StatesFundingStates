@@ -119,7 +119,10 @@ export default function App() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
       <main style={{ flex: 1, padding: '1.5rem', overflowX: 'auto', display: 'flex', flexDirection: 'column' }}>
-        <h1 style={{ marginTop: 0, marginBottom: '0.25rem' }}>States Funding States</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <img src="/logo.png" alt="States Funding States logo" style={{ width: 40, height: 40, flexShrink: 0 }} />
+          <h1 style={{ margin: 0 }}>States Funding States</h1>
+        </div>
         <p style={{ color: '#555', marginTop: 0, marginBottom: '0.75rem', fontSize: 13 }}>
           How much each state pays into the federal government vs. how much it receives back.
           <span style={{ color: '#c0392b' }}> Red</span> = net recipient.

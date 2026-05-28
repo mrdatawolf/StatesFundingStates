@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>States Funding States</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
   <style>
@@ -25,9 +26,14 @@
       color: #fff;
       padding: 1.1rem 2rem;
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 1.5rem;
       flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .header-logo {
+      width: 36px;
+      height: 36px;
       flex-shrink: 0;
     }
     header h1 { font-size: 1.35rem; font-weight: 700; }
@@ -242,6 +248,7 @@
 <div id="loading">Loading data…</div>
 
 <header>
+  <img src="logo.png" alt="States Funding States logo" class="header-logo">
   <h1>States Funding States</h1>
   <p>How much each state pays into the federal government vs. how much it receives back in spending.</p>
   <div class="hdr-control">
