@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>States Funding States</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f7f7f7;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.35rem; font-weight: 700; }
+    header p  { font-size: 0.8rem; opacity: 0.65; flex: 1; min-width: 200px; }
+
+    .year-picker {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.8);
+      white-space: nowrap;
+    }
+    .year-picker select {
+      font-size: 0.8rem;
+      padding: 0.2rem 0.4rem;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    /* ── Legend strip ── */
+    .legend-strip {
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 0.5rem 2rem;
+      font-size: 0.75rem;
+      color: #555;
+      display: flex;
+      gap: 1.5rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+    .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── Two-column layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      min-height: calc(100vh - 80px);
+    }
+
+    /* ── Table column ── */
+    .table-col {
+      background: #fff;
+      border-right: 1px solid #e5e5e5;
+      display: flex;
+      flex-direction: column;
+    }
+    .col-heading {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #888;
+      padding: 0.75rem 1rem 0.5rem;
+      border-bottom: 1px solid #eee;
+      flex-shrink: 0;
+    }
+    .table-scroll { overflow-y: auto; flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #fff;
+      padding: 0.35rem 0.5rem;
+      text-align: right;
+      border-bottom: 2px solid #ddd;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      font-size: 11px;
+      color: #555;
+      z-index: 1;
+    }
+    thead th:first-child { text-align: left; }
+    thead th:hover { background: #f5f5f5; }
+    .sort-ind { color: #bbb; font-size: 9px; margin-left: 2px; }
+    .sort-ind.active { color: #333; }
+
+    tbody tr { border-bottom: 1px solid #f0f0f0; }
+    tbody tr:hover { filter: brightness(0.96); }
+    tbody td { padding: 0.22rem 0.5rem; white-space: nowrap; text-align: right; }
+    tbody td:first-child { text-align: left; }
+    .donor-row    { background: #f0fff4; }
+    .recipient-row { background: #fff5f5; }
+
+    /* ── Charts column ── */
+    .charts-col {
+      padding: 1.25rem 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .chart-block {}
+    .chart-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #777;
+      margin-bottom: 0.6rem;
+    }
+
+    svg { display: block; }
+
+    /* ── Tooltip ── */
+    #tip {
+      position: fixed;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-size: 12px;
+      line-height: 1.5;
+      pointer-events: none;
+      display: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      z-index: 9999;
+      max-width: 220px;
+    }
+
+    /* ── Loading / error ── */
+    #loading {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #f7f7f7;
+      font-size: 0.9rem;
+      color: #777;
+      z-index: 100;
+    }
+
+    /* ── Footer ── */
+    footer {
+      background: #fff;
+      border-top: 1px solid #e5e5e5;
+      padding: 0.75rem 2rem;
+      font-size: 0.75rem;
+      color: #999;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      .table-col { border-right: none; border-bottom: 1px solid #e5e5e5; max-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">Loading data…</div>
+
+<header>
+  <h1>States Funding States</h1>
+  <p>How much each state pays into the federal government vs. how much it receives back in spending.</p>
+  <div class="year-picker">
+    <label for="yr">Fiscal year:</label>
+    <select id="yr"></select>
+  </div>
+</header>
+
+<div class="legend-strip">
+  <span class="legend-item"><span class="swatch" style="background:#e74c3c"></span>Net recipient — receives more than it pays in</span>
+  <span class="legend-item"><span class="swatch" style="background:#27ae60"></span>Net donor — pays in more than it receives</span>
+</div>
+
+<div class="layout">
+  <div class="table-col">
+    <div class="col-heading">All States</div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-k="stateName">State <span class="sort-ind" id="si-stateName">▼</span></th>
+            <th data-k="totalReceivedCents">Received <span class="sort-ind" id="si-totalReceivedCents">▼</span></th>
+            <th data-k="totalPaidInCents">Paid In <span class="sort-ind" id="si-totalPaidInCents">▼</span></th>
+            <th data-k="netCents">Net <span class="sort-ind" id="si-netCents">▼</span></th>
+            <th data-k="netPerCapitaCents">Per Capita <span class="sort-ind" id="si-netPerCapitaCents">▼</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="charts-col">
+    <div class="chart-block" id="block-map">
+      <div class="chart-title">Net per capita by state</div>
+      <div id="map"></div>
+    </div>
+    <div class="chart-block" id="block-return">
+      <div class="chart-title">Return on dollar — received per $1 paid in &nbsp;(break-even = $1.00)</div>
+      <div id="chart-return"></div>
+    </div>
+    <div class="chart-block" id="block-net">
+      <div class="chart-title">Net transfer by state ($B) — donors above zero, recipients below</div>
+      <div id="chart-net"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span id="footer-source"></span>
+  <span>Source: USASpending.gov · IRS Statistics of Income · US Census Bureau</span>
+</footer>
+
+<div id="tip"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allData  = null;
+let year     = null;
+let sortKey  = 'netCents';
+let sortDir  = 'desc';
+let usGeo    = null;
+
+const tip = document.getElementById('tip');
+
+function showTip(event, html) {
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  moveTip(event);
+}
+function moveTip(event) {
+  tip.style.left = (event.clientX + 14) + 'px';
+  tip.style.top  = (event.clientY + 14) + 'px';
+}
+function hideTip() { tip.style.display = 'none'; }
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+function fmtB(cents) {
+  const b = Math.abs(cents) / 1e11;
+  return (cents >= 0 ? '+' : '−') + '$' + b.toFixed(1) + 'B';
+}
+function fmtPC(cents) {
+  if (cents == null) return '—';
+  const d = Math.round(Math.abs(cents) / 100);
+  return (cents >= 0 ? '+' : '−') + '$' + d.toLocaleString();
+}
+
+// ── Color ─────────────────────────────────────────────────────────────────────
+function stateColor(netPerCapitaCents, maxAbs) {
+  if (netPerCapitaCents == null || maxAbs === 0) return '#d4d4d4';
+  const t = Math.max(-1, Math.min(1, netPerCapitaCents / maxAbs));
+  if (t > 0) {
+    const f = Math.round(255 * (1 - t * 0.8));
+    return `rgb(255,${f},${f})`;
+  }
+  const f = Math.round(255 * (1 + t * 0.8));
+  return `rgb(${f},210,${f})`;
+}
+
+// ── Render all ────────────────────────────────────────────────────────────────
+function render() {
+  const rows = allData[year] || [];
+  renderTable(rows);
+  renderMap(rows);
+  renderReturnChart(rows);
+  renderNetChart(rows);
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function renderTable(rows) {
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sortKey] ?? -Infinity;
+    const bv = b[sortKey] ?? -Infinity;
+    const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  document.getElementById('tbody').innerHTML = sorted.map(b => `
+    <tr class="${b.netCents > 0 ? 'recipient-row' : 'donor-row'}">
+      <td>${b.stateName} <span style="color:#999">${b.stateAbbr}</span></td>
+      <td>${fmtB(b.totalReceivedCents)}</td>
+      <td>${fmtB(b.totalPaidInCents)}</td>
+      <td style="font-weight:600">${fmtB(b.netCents)}</td>
+      <td>${fmtPC(b.netPerCapitaCents)}</td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('thead th[data-k]').forEach(th => {
+    const k = th.dataset.k;
+    const ind = document.getElementById('si-' + k);
+    if (!ind) return;
+    if (k === sortKey) {
+      ind.textContent = sortDir === 'asc' ? ' ▲' : ' ▼';
+      ind.className = 'sort-ind active';
+    } else {
+      ind.textContent = ' ▼';
+      ind.className = 'sort-ind';
+    }
+  });
+}
+
+// ── Choropleth ────────────────────────────────────────────────────────────────
+async function renderMap(rows) {
+  if (!usGeo) {
+    usGeo = await d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json');
+  }
+
+  const el = document.getElementById('map');
+  el.innerHTML = '';
+
+  const W = el.clientWidth || 600;
+  const H = Math.round(W * 0.62);
+  const features = topojson.feature(usGeo, usGeo.objects.states);
+  const proj = d3.geoAlbersUsa().fitSize([W, H], features);
+  const path = d3.geoPath().projection(proj);
+
+  const byFips = new Map(rows.map(b => [b.stateFips, b]));
+  const maxAbs = Math.max(...rows.map(b => Math.abs(b.netPerCapitaCents ?? 0)), 1);
+
+  const svg = d3.select(el).append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('width', '100%');
+
+  svg.selectAll('path')
+    .data(features.features)
+    .join('path')
+    .attr('d', path)
+    .attr('fill', d => {
+      const b = byFips.get(String(d.id).padStart(2, '0'));
+      return stateColor(b?.netPerCapitaCents ?? null, maxAbs);
+    })
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 0.5)
+    .style('cursor', 'default')
+    .on('mousemove', (event, d) => {
+      const b = byFips.get(String(d.id).padStart(2, '0'));
+      if (!b) return;
+      const pc = b.netPerCapitaCents != null
+        ? fmtPC(b.netPerCapitaCents) + '/person'
+        : 'no data';
+      showTip(event, `<strong>${b.stateName}</strong><br>Net: ${fmtB(b.netCents)}<br>Per capita: ${pc}`);
+    })
+    .on('mouseleave', hideTip);
+}
+
+// ── Return on dollar chart ────────────────────────────────────────────────────
+function renderReturnChart(rows) {
+  const data = rows
+    .filter(b => b.totalPaidInCents > 0)
+    .map(b => ({
+      abbr: b.stateAbbr,
+      name: b.stateName,
+      ratio: b.totalReceivedCents / b.totalPaidInCents,
+    }))
+    .sort((a, b) => b.ratio - a.ratio);
+
+  const el = document.getElementById('chart-return');
+  el.innerHTML = '';
+
+  const BAR_H  = 11;
+  const GAP    = 2;
+  const ML = 28, MR = 56, MT = 4, MB = 16;
+  const W  = el.clientWidth || 560;
+  const H  = data.length * (BAR_H + GAP) + MT + MB;
+  const IW = W - ML - MR;
+
+  const xMax = Math.max(d3.max(data, d => d.ratio) * 1.05, 2);
+  const x = d3.scaleLinear().domain([0, xMax]).range([0, IW]);
+
+  const svg = d3.select(el).append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('width', '100%');
+
+  const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
+
+  // x-axis
+  g.append('g')
+    .attr('transform', `translate(0,${H - MT - MB})`)
+    .call(d3.axisBottom(x).ticks(4).tickFormat(v => `$${v.toFixed(1)}`))
+    .call(ax => ax.select('.domain').remove())
+    .selectAll('text').attr('font-size', 9);
+
+  // break-even line
+  g.append('line')
+    .attr('x1', x(1)).attr('x2', x(1))
+    .attr('y1', 0).attr('y2', H - MT - MB)
+    .attr('stroke', '#aaa').attr('stroke-dasharray', '3 3').attr('stroke-width', 1);
+
+  const row = g.selectAll('g.r')
+    .data(data).join('g').attr('class', 'r')
+    .attr('transform', (d, i) => `translate(0,${i * (BAR_H + GAP)})`);
+
+  row.append('text')
+    .attr('x', -3).attr('y', BAR_H * 0.78)
+    .attr('text-anchor', 'end').attr('font-size', 8).attr('fill', '#666')
+    .text(d => d.abbr);
+
+  row.append('rect')
+    .attr('width', d => x(d.ratio))
+    .attr('height', BAR_H)
+    .attr('fill', d => d.ratio > 1 ? '#e74c3c' : '#27ae60')
+    .attr('rx', 1);
+
+  row.append('text')
+    .attr('x', d => x(d.ratio) + 3)
+    .attr('y', BAR_H * 0.82)
+    .attr('font-size', 8).attr('fill', '#444')
+    .text(d => `$${d.ratio.toFixed(2)}`);
+
+  row
+    .on('mousemove', (event, d) =>
+      showTip(event, `<strong>${d.name}</strong><br>$${d.ratio.toFixed(2)} back per $1 paid`))
+    .on('mouseleave', hideTip);
+}
+
+// ── Net by state bar chart ────────────────────────────────────────────────────
+function renderNetChart(rows) {
+  // invert sign: donors positive (above zero), recipients negative (below zero)
+  const data = [...rows]
+    .sort((a, b) => a.netCents - b.netCents)
+    .map(b => ({ abbr: b.stateAbbr, name: b.stateName, net: -b.netCents / 1e11 }));
+
+  const el = document.getElementById('chart-net');
+  el.innerHTML = '';
+
+  const ML = 40, MR = 12, MT = 4, MB = 44;
+  const W  = el.clientWidth || 560;
+  const H  = 200;
+  const IW = W - ML - MR;
+  const IH = H - MT - MB;
+
+  const x = d3.scaleBand().domain(data.map(d => d.abbr)).range([0, IW]).padding(0.12);
+  const yMax = Math.max(d3.max(data, d => Math.abs(d.net)) * 1.05, 1);
+  const y = d3.scaleLinear().domain([-yMax, yMax]).range([IH, 0]).nice();
+
+  const svg = d3.select(el).append('svg')
+    .attr('viewBox', `0 0 ${W} ${H + MT + MB}`)
+    .attr('width', '100%');
+
+  const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
+
+  g.append('g').call(
+    d3.axisLeft(y).ticks(4).tickFormat(v => `$${v}B`)
+  ).call(ax => ax.select('.domain').remove())
+    .selectAll('text').attr('font-size', 9);
+
+  g.append('g')
+    .attr('transform', `translate(0,${IH})`)
+    .call(d3.axisBottom(x).tickSize(0))
+    .call(ax => ax.select('.domain').remove())
+    .selectAll('text')
+    .attr('font-size', 7)
+    .attr('transform', 'rotate(-55)')
+    .attr('text-anchor', 'end')
+    .attr('dy', 2).attr('dx', -2);
+
+  // zero line
+  g.append('line')
+    .attr('x1', 0).attr('x2', IW)
+    .attr('y1', y(0)).attr('y2', y(0))
+    .attr('stroke', '#bbb').attr('stroke-width', 1);
+
+  g.selectAll('rect').data(data).join('rect')
+    .attr('x', d => x(d.abbr))
+    .attr('width', x.bandwidth())
+    .attr('y', d => d.net >= 0 ? y(d.net) : y(0))
+    .attr('height', d => Math.abs(y(d.net) - y(0)))
+    .attr('fill', d => d.net >= 0 ? '#27ae60' : '#e74c3c')
+    .on('mousemove', (event, d) =>
+      showTip(event, `<strong>${d.name}</strong><br>${d.net >= 0 ? '+' : ''}${d.net.toFixed(1)}B`))
+    .on('mouseleave', hideTip);
+}
+
+// ── Sort wiring ───────────────────────────────────────────────────────────────
+document.querySelectorAll('thead th[data-k]').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    if (k === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = k; sortDir = 'desc'; }
+    renderTable(allData[year] || []);
+  });
+});
+
+// ── Year selector ─────────────────────────────────────────────────────────────
+document.getElementById('yr').addEventListener('change', e => {
+  year = +e.target.value;
+  render();
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+fetch('./data.json')
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  })
+  .then(data => {
+    allData = data;
+    year = data.years[0];
+
+    const sel = document.getElementById('yr');
+    data.years.forEach(y => {
+      const opt = document.createElement('option');
+      opt.value = y; opt.textContent = y;
+      sel.appendChild(opt);
+    });
+
+    if (data.generatedAt) {
+      const d = new Date(data.generatedAt);
+      document.getElementById('footer-source').textContent =
+        'Data snapshot: ' + d.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+    }
+
+    document.getElementById('loading').style.display = 'none';
+    render();
+  })
+  .catch(err => {
+    document.getElementById('loading').textContent =
+      'Could not load data.json — ' + err.message +
+      '.  Run build-static.sh to generate it.';
+  });
+</script>
+</body>
+</html>
