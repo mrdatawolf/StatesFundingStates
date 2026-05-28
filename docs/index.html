@@ -291,6 +291,7 @@
             <th data-k="totalPaidInCents">Paid In <span class="sort-ind" id="si-totalPaidInCents">▼</span></th>
             <th data-k="netCents">Net <span class="sort-ind" id="si-netCents">▼</span></th>
             <th data-k="netPerCapitaCents">Per Capita <span class="sort-ind" id="si-netPerCapitaCents">▼</span></th>
+            <th id="th-lean" style="display:none">Lean</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -526,15 +527,25 @@ function renderTable(rows) {
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
-  document.getElementById('tbody').innerHTML = sorted.map(b => `
+  const showLean = document.getElementById('th-lean').style.display !== 'none';
+  document.getElementById('tbody').innerHTML = sorted.map(b => {
+    const v = showLean ? getVoting(b.stateFips) : null;
+    const lean = v ? v.lean : null;
+    const leanTxt = lean == null ? '—'
+      : lean > 0.005  ? `D+${(lean * 100).toFixed(1)}%`
+      : lean < -0.005 ? `R+${(Math.abs(lean) * 100).toFixed(1)}%`
+      : 'Even';
+    const leanCol = lean == null ? '#999' : lean > 0 ? '#0052a5' : '#b22222';
+    return `
     <tr class="${b.netCents > 0 ? 'recipient-row' : 'donor-row'}">
       <td>${b.stateName} <span style="color:#999">${b.stateAbbr}</span></td>
       <td>${fmtB(b.totalReceivedCents)}</td>
       <td>${fmtB(b.totalPaidInCents)}</td>
       <td style="font-weight:600">${fmtB(b.netCents)}</td>
       <td>${fmtPC(b.netPerCapitaCents)}</td>
-    </tr>
-  `).join('');
+      ${showLean ? `<td style="color:${leanCol};font-weight:600">${leanTxt}</td>` : ''}
+    </tr>`;
+  }).join('');
 
   // Highlight the active sort column if it maps to a table header
   document.querySelectorAll('thead th[data-k]').forEach(th => {
@@ -701,20 +712,21 @@ function renderBarChart(rows) {
 }
 
 // ── Scroll hint ───────────────────────────────────────────────────────────────
-const scrollHint   = document.getElementById('scroll-hint');
-const chartsCol    = document.querySelector('.charts-col');
+const scrollHint = document.getElementById('scroll-hint');
+const chartsCol  = document.querySelector('.charts-col');
 
 function hideScrollHint() { scrollHint.classList.add('hidden'); }
 function showScrollHint() { scrollHint.classList.remove('hidden'); }
 
-chartsCol.addEventListener('scroll', hideScrollHint, { once: true });
+// Hide only when the user has scrolled close to the bottom — not on first scroll.
+chartsCol.addEventListener('scroll', () => {
+  const { scrollTop, scrollHeight, clientHeight } = chartsCol;
+  if (scrollTop + clientHeight >= scrollHeight - 80) hideScrollHint();
+});
 
-// Re-show (and re-arm) when the user changes year or metric so the hint
-// reappears after new content renders and the column scrolls back to top.
 function resetScrollHint() {
   chartsCol.scrollTop = 0;
   showScrollHint();
-  chartsCol.addEventListener('scroll', hideScrollHint, { once: true });
 }
 
 // ── Sort wiring (table column headers) ───────────────────────────────────────
@@ -723,6 +735,7 @@ document.querySelectorAll('thead th[data-k]').forEach(th => {
     const k = th.dataset.k;
     if (k === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = k; sortDir = 'desc'; }
+    savePrefs();
     renderTable(getFilteredRows());
   });
 });
@@ -740,6 +753,7 @@ document.getElementById('metric-sel').addEventListener('change', e => {
   sortKey = metric === 'politicalLean' ? 'stateName' : metric;
   sortDir = metric === 'politicalLean' ? 'asc' : 'desc';
   document.getElementById('voting-yr-ctrl').style.display = metric === 'politicalLean' ? '' : 'none';
+  savePrefs();
   render();
   resetScrollHint();
 });
@@ -747,12 +761,16 @@ document.getElementById('metric-sel').addEventListener('change', e => {
 // ── Election year selector ────────────────────────────────────────────────────
 document.getElementById('voting-yr-sel').addEventListener('change', e => {
   votingYear = +e.target.value;
+  const thLean = document.getElementById('th-lean');
+  if (thLean.style.display !== 'none') thLean.textContent = `Lean (${votingYear})`;
+  savePrefs();
   render();
 });
 
 // ── Party filter ──────────────────────────────────────────────────────────────
 document.getElementById('party-filter').addEventListener('change', e => {
   partyFilter = e.target.value;
+  savePrefs();
   const filtered = getFilteredRows();
   renderTable(filtered);
   renderBarChart(filtered);
@@ -766,7 +784,39 @@ document.getElementById('state-filter').addEventListener('input', e => {
   renderBarChart(filtered);
 });
 
+// ── Preferences (localStorage) ───────────────────────────────────────────────
+const PREF_KEY = 'sfs-prefs';
+
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({ metric, sortKey, sortDir, partyFilter, votingYear }));
+  } catch {}
+}
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREF_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (p.metric      && METRICS[p.metric]) metric      = p.metric;
+    if (p.sortKey)                           sortKey     = p.sortKey;
+    if (p.sortDir)                           sortDir     = p.sortDir;
+    if (p.partyFilter)                       partyFilter = p.partyFilter;
+    if (p.votingYear)                        votingYear  = p.votingYear;
+  } catch {}
+}
+
+function syncSelectsToState() {
+  document.getElementById('metric-sel').value  = metric;
+  document.getElementById('party-filter').value = partyFilter;
+  const vSel = document.getElementById('voting-yr-sel');
+  if (votingYear && vSel.options.length > 0) vSel.value = votingYear;
+  document.getElementById('voting-yr-ctrl').style.display = metric === 'politicalLean' ? '' : 'none';
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
+loadPrefs();
+
 fetch('./data.json')
   .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
   .then(data => {
@@ -785,8 +835,7 @@ fetch('./data.json')
     if (votingYears.length > 0) {
       document.getElementById('footer-sources').textContent =
         'Source: USASpending.gov · IRS Statistics of Income · US Census Bureau · MIT Election Data + Science Lab (MEDSL)';
-    }
-    if (votingYears.length > 0) {
+
       votingYear = votingYears[0]; // most recent first
       const vSel = document.getElementById('voting-yr-sel');
       votingYears.forEach(vy => {
@@ -794,20 +843,36 @@ fetch('./data.json')
         opt.value = vy; opt.textContent = vy;
         vSel.appendChild(opt);
       });
+
+      // Show lean column in table
+      const thLean = document.getElementById('th-lean');
+      thLean.style.display = '';
+      thLean.textContent = `Lean (${votingYear})`;
     }
 
     if (data.generatedAt) {
       const d = new Date(data.generatedAt);
-      document.getElementById('footer-source').textContent =
-        'Data snapshot: ' + d.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+      const dateStr = d.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+      const versionStr = data.version ? ` · v${data.version}` : '';
+      document.getElementById('footer-source').textContent = `Data snapshot: ${dateStr}${versionStr}`;
     }
 
     document.getElementById('loading').style.display = 'none';
+    syncSelectsToState();
     render();
   })
   .catch(err => {
-    document.getElementById('loading').textContent =
-      'Could not load data.json — ' + err.message + '.  Run build-static.sh to generate it.';
+    const isFileProtocol = location.protocol === 'file:';
+    const msg = isFileProtocol
+      ? 'Opening this file directly (file://) blocks data loading. Serve it via HTTP instead:\n\n  cd docs && python3 -m http.server 8080\n\nThen open http://localhost:8080 in your browser.'
+      : 'Could not load data.json — ' + err.message + '.  Run build-static.sh to generate it.';
+    const el = document.getElementById('loading');
+    el.style.whiteSpace = 'pre-wrap';
+    el.style.fontFamily = 'monospace';
+    el.style.padding = '2rem';
+    el.style.maxWidth = '540px';
+    el.style.textAlign = 'left';
+    el.textContent = msg;
   });
 </script>
 </body>

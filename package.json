@@ -1,7 +1,7 @@
 {
   "name": "states-funding-states",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.7.0",
   "scripts": {
     "db:generate": "pnpm --filter @sfs/db generate",
     "db:migrate": "pnpm --filter @sfs/db migrate",

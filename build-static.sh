@@ -39,13 +39,15 @@ echo "   Balance years: $YEARS"
 echo "   Voting years:  ${VOTING_YEARS}"
 echo "→  Building docs/data.json..."
 
+VERSION=$(node -e "process.stdout.write(require('./package.json').version)")
+
 node --input-type=module << EOF
 import { writeFileSync } from 'node:fs';
 
 const api         = "${API}";
 const years       = ${YEARS};
 const votingYears = ${VOTING_YEARS};
-const result      = { years, votingYears, generatedAt: new Date().toISOString() };
+const result      = { years, votingYears, version: "${VERSION}", generatedAt: new Date().toISOString() };
 
 for (const y of years) {
   const r = await fetch(\`\${api}/balances?year=\${y}\`);
