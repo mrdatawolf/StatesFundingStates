@@ -29,7 +29,7 @@
     header h1 { font-size: 1.35rem; font-weight: 700; }
     header p  { font-size: 0.8rem; opacity: 0.65; flex: 1; min-width: 200px; }
 
-    .year-picker {
+    .hdr-control {
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -37,7 +37,7 @@
       color: rgba(255,255,255,0.8);
       white-space: nowrap;
     }
-    .year-picker select {
+    .hdr-control select {
       font-size: 0.8rem;
       padding: 0.2rem 0.4rem;
       border: 1px solid rgba(255,255,255,0.3);
@@ -46,9 +46,10 @@
       color: #fff;
       cursor: pointer;
     }
+    .hdr-control select option { background: #1a1a2e; }
 
     /* ── Legend strip ── */
-    .legend-strip {
+    #legend-strip {
       background: #fff;
       border-bottom: 1px solid #e5e5e5;
       padding: 0.5rem 2rem;
@@ -56,6 +57,8 @@
       color: #555;
       display: flex;
       gap: 1.5rem;
+      flex-wrap: wrap;
+      align-items: center;
     }
     .legend-item { display: flex; align-items: center; gap: 0.4rem; }
     .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
@@ -63,7 +66,7 @@
     /* ── Two-column layout ── */
     .layout {
       display: grid;
-      grid-template-columns: 420px 1fr;
+      grid-template-columns: 468px 1fr;
       min-height: calc(100vh - 80px);
     }
 
@@ -174,7 +177,7 @@
     }
 
     /* ── Responsive ── */
-    @media (max-width: 860px) {
+    @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
       .table-col { border-right: none; border-bottom: 1px solid #e5e5e5; max-height: 360px; }
     }
@@ -187,16 +190,23 @@
 <header>
   <h1>States Funding States</h1>
   <p>How much each state pays into the federal government vs. how much it receives back in spending.</p>
-  <div class="year-picker">
+  <div class="hdr-control">
     <label for="yr">Fiscal year:</label>
     <select id="yr"></select>
   </div>
+  <div class="hdr-control">
+    <label for="metric-sel">Map shows:</label>
+    <select id="metric-sel">
+      <option value="netPerCapitaCents">Net per capita</option>
+      <option value="netCents">Net total ($B)</option>
+      <option value="returnOnDollar">Return on dollar</option>
+      <option value="totalReceivedCents">Total received</option>
+      <option value="totalPaidInCents">Total paid in</option>
+    </select>
+  </div>
 </header>
 
-<div class="legend-strip">
-  <span class="legend-item"><span class="swatch" style="background:#e74c3c"></span>Net recipient — receives more than it pays in</span>
-  <span class="legend-item"><span class="swatch" style="background:#27ae60"></span>Net donor — pays in more than it receives</span>
-</div>
+<div id="legend-strip"></div>
 
 <div class="layout">
   <div class="table-col">
@@ -219,7 +229,7 @@
 
   <div class="charts-col">
     <div class="chart-block" id="block-map">
-      <div class="chart-title">Net per capita by state</div>
+      <div class="chart-title" id="map-title">Net per capita by state</div>
       <div id="map"></div>
     </div>
     <div class="chart-block" id="block-return">
@@ -241,24 +251,34 @@
 <div id="tip"></div>
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let allData  = null;
-let year     = null;
-let sortKey  = 'netCents';
-let sortDir  = 'desc';
-let usGeo    = null;
+// ── App state ─────────────────────────────────────────────────────────────────
+let allData = null;
+let year    = null;
+let sortKey = 'netCents';
+let sortDir = 'desc';
+let usGeo   = null;
+let metric  = 'netPerCapitaCents';
 
+// ── Metric definitions ────────────────────────────────────────────────────────
+const METRICS = {
+  netPerCapitaCents:  { label: 'Net per capita',   title: 'Net per capita by state',          kind: 'div0' },
+  netCents:           { label: 'Net total ($B)',    title: 'Net total ($B) by state',          kind: 'div0' },
+  returnOnDollar:     { label: 'Return on dollar',  title: 'Return on dollar by state',        kind: 'div1' },
+  totalReceivedCents: { label: 'Total received',    title: 'Total received from federal ($B)', kind: 'blue' },
+  totalPaidInCents:   { label: 'Total paid in',     title: 'Total paid into federal ($B)',     kind: 'orange' },
+};
+
+function getValue(row, key) {
+  if (key === 'returnOnDollar') {
+    return row.totalPaidInCents > 0 ? row.totalReceivedCents / row.totalPaidInCents : null;
+  }
+  return row[key] ?? null;
+}
+
+// ── Tooltip helpers ───────────────────────────────────────────────────────────
 const tip = document.getElementById('tip');
-
-function showTip(event, html) {
-  tip.innerHTML = html;
-  tip.style.display = 'block';
-  moveTip(event);
-}
-function moveTip(event) {
-  tip.style.left = (event.clientX + 14) + 'px';
-  tip.style.top  = (event.clientY + 14) + 'px';
-}
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = 'block'; moveTip(e); }
+function moveTip(e) { tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
 function hideTip() { tip.style.display = 'none'; }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -268,25 +288,69 @@ function fmtB(cents) {
 }
 function fmtPC(cents) {
   if (cents == null) return '—';
-  const d = Math.round(Math.abs(cents) / 100);
-  return (cents >= 0 ? '+' : '−') + '$' + d.toLocaleString();
+  return (cents >= 0 ? '+' : '−') + '$' + Math.round(Math.abs(cents) / 100).toLocaleString();
+}
+function fmtMetricTip(row, key) {
+  const val = getValue(row, key);
+  if (val == null) return 'no data';
+  switch (key) {
+    case 'netPerCapitaCents':   return fmtPC(val) + '/person';
+    case 'netCents':            return fmtB(val) + ' net';
+    case 'returnOnDollar':      return `$${val.toFixed(2)} back per $1 paid`;
+    case 'totalReceivedCents':  return fmtB(val) + ' received';
+    case 'totalPaidInCents':    return fmtB(val) + ' paid in';
+  }
 }
 
-// ── Color ─────────────────────────────────────────────────────────────────────
-function stateColor(netPerCapitaCents, maxAbs) {
-  if (netPerCapitaCents == null || maxAbs === 0) return '#d4d4d4';
-  const t = Math.max(-1, Math.min(1, netPerCapitaCents / maxAbs));
-  if (t > 0) {
-    const f = Math.round(255 * (1 - t * 0.8));
-    return `rgb(255,${f},${f})`;
+// ── Map color ─────────────────────────────────────────────────────────────────
+function metricColor(row, rows, key) {
+  const val = getValue(row, key);
+  if (val == null) return '#d4d4d4';
+  const { kind } = METRICS[key];
+  const vals = rows.map(r => getValue(r, key)).filter(v => v != null);
+
+  if (kind === 'div0') {
+    const maxAbs = Math.max(...vals.map(Math.abs), 1);
+    const t = Math.max(-1, Math.min(1, val / maxAbs));
+    if (t > 0) { const f = Math.round(255 * (1 - t * 0.8)); return `rgb(255,${f},${f})`; }
+    const f = Math.round(255 * (1 + t * 0.8)); return `rgb(${f},210,${f})`;
   }
-  const f = Math.round(255 * (1 + t * 0.8));
-  return `rgb(${f},210,${f})`;
+  if (kind === 'div1') {
+    const maxDev = Math.max(...vals.map(v => Math.abs(v - 1)), 0.1);
+    const t = Math.max(-1, Math.min(1, (val - 1) / maxDev));
+    if (t > 0) { const f = Math.round(255 * (1 - t * 0.8)); return `rgb(255,${f},${f})`; }
+    const f = Math.round(255 * (1 + t * 0.8)); return `rgb(${f},210,${f})`;
+  }
+  const maxVal = Math.max(...vals, 1);
+  const t = Math.max(0, Math.min(1, val / maxVal));
+  if (kind === 'blue')   return d3.interpolateBlues(0.15 + t * 0.85);
+  if (kind === 'orange') return d3.interpolateOranges(0.15 + t * 0.85);
+  return '#d4d4d4';
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+function updateLegend() {
+  const strip = document.getElementById('legend-strip');
+  const { kind } = METRICS[metric];
+  if (kind === 'div0' || kind === 'div1') {
+    strip.innerHTML = `
+      <span class="legend-item"><span class="swatch" style="background:#e74c3c"></span>Net recipient — receives more than it pays in</span>
+      <span class="legend-item"><span class="swatch" style="background:#27ae60"></span>Net donor — pays in more than it receives</span>`;
+  } else if (kind === 'blue') {
+    strip.innerHTML = `
+      <span class="legend-item"><span class="swatch" style="background:${d3.interpolateBlues(0.25)}"></span>Less received</span>
+      <span class="legend-item"><span class="swatch" style="background:${d3.interpolateBlues(0.9)}"></span>More received</span>`;
+  } else if (kind === 'orange') {
+    strip.innerHTML = `
+      <span class="legend-item"><span class="swatch" style="background:${d3.interpolateOranges(0.25)}"></span>Less paid in</span>
+      <span class="legend-item"><span class="swatch" style="background:${d3.interpolateOranges(0.9)}"></span>More paid in</span>`;
+  }
 }
 
 // ── Render all ────────────────────────────────────────────────────────────────
 function render() {
   const rows = allData[year] || [];
+  updateLegend();
   renderTable(rows);
   renderMap(rows);
   renderReturnChart(rows);
@@ -313,16 +377,11 @@ function renderTable(rows) {
   `).join('');
 
   document.querySelectorAll('thead th[data-k]').forEach(th => {
-    const k = th.dataset.k;
+    const k   = th.dataset.k;
     const ind = document.getElementById('si-' + k);
     if (!ind) return;
-    if (k === sortKey) {
-      ind.textContent = sortDir === 'asc' ? ' ▲' : ' ▼';
-      ind.className = 'sort-ind active';
-    } else {
-      ind.textContent = ' ▼';
-      ind.className = 'sort-ind';
-    }
+    ind.textContent = k === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ▼';
+    ind.className   = 'sort-ind' + (k === sortKey ? ' active' : '');
   });
 }
 
@@ -331,6 +390,8 @@ async function renderMap(rows) {
   if (!usGeo) {
     usGeo = await d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json');
   }
+
+  document.getElementById('map-title').textContent = METRICS[metric].title;
 
   const el = document.getElementById('map');
   el.innerHTML = '';
@@ -342,7 +403,6 @@ async function renderMap(rows) {
   const path = d3.geoPath().projection(proj);
 
   const byFips = new Map(rows.map(b => [b.stateFips, b]));
-  const maxAbs = Math.max(...rows.map(b => Math.abs(b.netPerCapitaCents ?? 0)), 1);
 
   const svg = d3.select(el).append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
@@ -354,7 +414,7 @@ async function renderMap(rows) {
     .attr('d', path)
     .attr('fill', d => {
       const b = byFips.get(String(d.id).padStart(2, '0'));
-      return stateColor(b?.netPerCapitaCents ?? null, maxAbs);
+      return b ? metricColor(b, rows, metric) : '#d4d4d4';
     })
     .attr('stroke', '#fff')
     .attr('stroke-width', 0.5)
@@ -362,10 +422,7 @@ async function renderMap(rows) {
     .on('mousemove', (event, d) => {
       const b = byFips.get(String(d.id).padStart(2, '0'));
       if (!b) return;
-      const pc = b.netPerCapitaCents != null
-        ? fmtPC(b.netPerCapitaCents) + '/person'
-        : 'no data';
-      showTip(event, `<strong>${b.stateName}</strong><br>Net: ${fmtB(b.netCents)}<br>Per capita: ${pc}`);
+      showTip(event, `<strong>${b.stateName}</strong><br>${fmtMetricTip(b, metric)}`);
     })
     .on('mouseleave', hideTip);
 }
@@ -374,75 +431,54 @@ async function renderMap(rows) {
 function renderReturnChart(rows) {
   const data = rows
     .filter(b => b.totalPaidInCents > 0)
-    .map(b => ({
-      abbr: b.stateAbbr,
-      name: b.stateName,
-      ratio: b.totalReceivedCents / b.totalPaidInCents,
-    }))
+    .map(b => ({ abbr: b.stateAbbr, name: b.stateName, ratio: b.totalReceivedCents / b.totalPaidInCents }))
     .sort((a, b) => b.ratio - a.ratio);
 
   const el = document.getElementById('chart-return');
   el.innerHTML = '';
 
-  const BAR_H  = 11;
-  const GAP    = 2;
+  const BAR_H = 11, GAP = 2;
   const ML = 28, MR = 56, MT = 4, MB = 16;
   const W  = el.clientWidth || 560;
   const H  = data.length * (BAR_H + GAP) + MT + MB;
   const IW = W - ML - MR;
-
   const xMax = Math.max(d3.max(data, d => d.ratio) * 1.05, 2);
   const x = d3.scaleLinear().domain([0, xMax]).range([0, IW]);
 
   const svg = d3.select(el).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', '100%');
-
+    .attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
   const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
 
-  // x-axis
-  g.append('g')
-    .attr('transform', `translate(0,${H - MT - MB})`)
+  g.append('g').attr('transform', `translate(0,${H - MT - MB})`)
     .call(d3.axisBottom(x).ticks(4).tickFormat(v => `$${v.toFixed(1)}`))
     .call(ax => ax.select('.domain').remove())
     .selectAll('text').attr('font-size', 9);
 
-  // break-even line
   g.append('line')
-    .attr('x1', x(1)).attr('x2', x(1))
-    .attr('y1', 0).attr('y2', H - MT - MB)
+    .attr('x1', x(1)).attr('x2', x(1)).attr('y1', 0).attr('y2', H - MT - MB)
     .attr('stroke', '#aaa').attr('stroke-dasharray', '3 3').attr('stroke-width', 1);
 
-  const row = g.selectAll('g.r')
-    .data(data).join('g').attr('class', 'r')
+  const row = g.selectAll('g.r').data(data).join('g').attr('class', 'r')
     .attr('transform', (d, i) => `translate(0,${i * (BAR_H + GAP)})`);
 
-  row.append('text')
-    .attr('x', -3).attr('y', BAR_H * 0.78)
+  row.append('text').attr('x', -3).attr('y', BAR_H * 0.78)
     .attr('text-anchor', 'end').attr('font-size', 8).attr('fill', '#666')
     .text(d => d.abbr);
 
-  row.append('rect')
-    .attr('width', d => x(d.ratio))
-    .attr('height', BAR_H)
-    .attr('fill', d => d.ratio > 1 ? '#e74c3c' : '#27ae60')
-    .attr('rx', 1);
+  row.append('rect').attr('width', d => x(d.ratio)).attr('height', BAR_H)
+    .attr('fill', d => d.ratio > 1 ? '#e74c3c' : '#27ae60').attr('rx', 1);
 
-  row.append('text')
-    .attr('x', d => x(d.ratio) + 3)
-    .attr('y', BAR_H * 0.82)
+  row.append('text').attr('x', d => x(d.ratio) + 3).attr('y', BAR_H * 0.82)
     .attr('font-size', 8).attr('fill', '#444')
     .text(d => `$${d.ratio.toFixed(2)}`);
 
   row
-    .on('mousemove', (event, d) =>
-      showTip(event, `<strong>${d.name}</strong><br>$${d.ratio.toFixed(2)} back per $1 paid`))
+    .on('mousemove', (event, d) => showTip(event, `<strong>${d.name}</strong><br>$${d.ratio.toFixed(2)} back per $1 paid`))
     .on('mouseleave', hideTip);
 }
 
 // ── Net by state bar chart ────────────────────────────────────────────────────
 function renderNetChart(rows) {
-  // invert sign: donors positive (above zero), recipients negative (below zero)
   const data = [...rows]
     .sort((a, b) => a.netCents - b.netCents)
     .map(b => ({ abbr: b.stateAbbr, name: b.stateName, net: -b.netCents / 1e11 }));
@@ -461,40 +497,29 @@ function renderNetChart(rows) {
   const y = d3.scaleLinear().domain([-yMax, yMax]).range([IH, 0]).nice();
 
   const svg = d3.select(el).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H + MT + MB}`)
-    .attr('width', '100%');
-
+    .attr('viewBox', `0 0 ${W} ${H + MT + MB}`).attr('width', '100%');
   const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
 
-  g.append('g').call(
-    d3.axisLeft(y).ticks(4).tickFormat(v => `$${v}B`)
-  ).call(ax => ax.select('.domain').remove())
+  g.append('g').call(d3.axisLeft(y).ticks(4).tickFormat(v => `$${v}B`))
+    .call(ax => ax.select('.domain').remove())
     .selectAll('text').attr('font-size', 9);
 
-  g.append('g')
-    .attr('transform', `translate(0,${IH})`)
+  g.append('g').attr('transform', `translate(0,${IH})`)
     .call(d3.axisBottom(x).tickSize(0))
     .call(ax => ax.select('.domain').remove())
     .selectAll('text')
-    .attr('font-size', 7)
-    .attr('transform', 'rotate(-55)')
-    .attr('text-anchor', 'end')
-    .attr('dy', 2).attr('dx', -2);
+    .attr('font-size', 7).attr('transform', 'rotate(-55)')
+    .attr('text-anchor', 'end').attr('dy', 2).attr('dx', -2);
 
-  // zero line
-  g.append('line')
-    .attr('x1', 0).attr('x2', IW)
-    .attr('y1', y(0)).attr('y2', y(0))
+  g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', y(0)).attr('y2', y(0))
     .attr('stroke', '#bbb').attr('stroke-width', 1);
 
   g.selectAll('rect').data(data).join('rect')
-    .attr('x', d => x(d.abbr))
-    .attr('width', x.bandwidth())
+    .attr('x', d => x(d.abbr)).attr('width', x.bandwidth())
     .attr('y', d => d.net >= 0 ? y(d.net) : y(0))
     .attr('height', d => Math.abs(y(d.net) - y(0)))
     .attr('fill', d => d.net >= 0 ? '#27ae60' : '#e74c3c')
-    .on('mousemove', (event, d) =>
-      showTip(event, `<strong>${d.name}</strong><br>${d.net >= 0 ? '+' : ''}${d.net.toFixed(1)}B`))
+    .on('mousemove', (event, d) => showTip(event, `<strong>${d.name}</strong><br>${d.net >= 0 ? '+' : ''}${d.net.toFixed(1)}B`))
     .on('mouseleave', hideTip);
 }
 
@@ -508,18 +533,21 @@ document.querySelectorAll('thead th[data-k]').forEach(th => {
   });
 });
 
-// ── Year selector ─────────────────────────────────────────────────────────────
+// ── Selectors ─────────────────────────────────────────────────────────────────
 document.getElementById('yr').addEventListener('change', e => {
   year = +e.target.value;
   render();
 });
 
+document.getElementById('metric-sel').addEventListener('change', e => {
+  metric = e.target.value;
+  updateLegend();
+  renderMap(allData[year] || []);
+});
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 fetch('./data.json')
-  .then(r => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  })
+  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
   .then(data => {
     allData = data;
     year = data.years[0];
@@ -542,8 +570,7 @@ fetch('./data.json')
   })
   .catch(err => {
     document.getElementById('loading').textContent =
-      'Could not load data.json — ' + err.message +
-      '.  Run build-static.sh to generate it.';
+      'Could not load data.json — ' + err.message + '.  Run build-static.sh to generate it.';
   });
 </script>
 </body>
