@@ -78,6 +78,12 @@ export default function AdminPanel({ onDataChanged }: Props) {
     return r
   }, [censusYear, onDataChanged]))
 
+  const medsl = useAction(useCallback(async () => {
+    const r = await api.scrapeMedslVoting()
+    onDataChanged()
+    return r
+  }, [onDataChanged]))
+
   const compute = useAction(useCallback(async () => {
     const r = await api.computeBalances(computeYear)
     onDataChanged()
@@ -160,6 +166,14 @@ export default function AdminPanel({ onDataChanged }: Props) {
             Fetch population
           </button>
           <StatusLine state={census.state} />
+
+          {/* MEDSL Voting */}
+          <SectionHeader title="Election Results (MEDSL)" />
+          <p style={s.hint}>Downloads presidential voting data for all years from Harvard Dataverse. Only needed once — the dataset covers all election years.</p>
+          <button style={{ ...s.btn, ...s.btnPrimary }} disabled={medsl.state.status === 'loading'} onClick={medsl.run}>
+            {medsl.state.status === 'loading' ? 'Downloading…' : 'Auto-download & ingest'}
+          </button>
+          <StatusLine state={medsl.state} />
 
           {/* Compute */}
           <SectionHeader title="Compute Balances" />

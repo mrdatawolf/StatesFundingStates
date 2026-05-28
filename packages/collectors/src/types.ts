@@ -24,3 +24,12 @@ export interface RawPopulationRecord {
   censusYear: number
   population: number
 }
+
+export interface RawVotingRecord {
+  stateFips: string
+  electionYear: number
+  demVotes: number
+  repVotes: number
+  otherVotes: number
+  totalVotes: number
+}

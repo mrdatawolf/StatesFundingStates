@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart'
 import dbPlugin from './plugins/db.js'
 import ingestRoutes from './routes/ingest.js'
 import balanceRoutes from './routes/balances.js'
+import votingRoutes from './routes/voting.js'
 
 const app = Fastify({ logger: true })
 
@@ -12,6 +13,7 @@ await app.register(multipart)
 await app.register(dbPlugin)
 await app.register(ingestRoutes)
 await app.register(balanceRoutes)
+await app.register(votingRoutes)
 
 app.get('/health', async () => ({ status: 'ok' }))
 

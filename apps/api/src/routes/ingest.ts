@@ -1,13 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { collectUsaSpending, collectIrsSoi, collectIrsSoiBatch, collectCensusPopulation, downloadIrsSoiYear } from '@sfs/collectors'
+import { collectUsaSpending, collectIrsSoi, collectIrsSoiBatch, collectCensusPopulation, downloadIrsSoiYear, collectMedslVoting, downloadMedslVoting } from '@sfs/collectors'
 import { computeBalances } from '@sfs/processor'
 import { ingestRuns } from '@sfs/db'
 import { desc } from 'drizzle-orm'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const IRS_DATA_BASE = join(REPO_ROOT, 'data', 'irs-soi')
+const MEDSL_DATA_DIR = join(REPO_ROOT, 'data', 'medsl')
 
 export default async function ingestRoutes(app: FastifyInstance) {
   // Trigger a USASpending fetch for a given fiscal year.
@@ -76,6 +77,17 @@ export default async function ingestRoutes(app: FastifyInstance) {
 
     const result = await computeBalances(app.db, fiscalYear)
     return reply.send(result)
+  })
+
+  // Download MEDSL presidential election data from Harvard Dataverse and ingest it.
+  // No year parameter — the dataset covers all election years in a single file.
+  // Postcondition: raw_voting_results rows written for all states and election years in the file
+  app.post('/ingest/medsl-voting/scrape', async (_req, reply) => {
+    const scrape = await downloadMedslVoting(MEDSL_DATA_DIR)
+    const { readFile } = await import('fs/promises')
+    const buffer = await readFile(scrape.filePath)
+    const ingest = await collectMedslVoting(app.db, buffer)
+    return reply.status(202).send({ scrape, ingest })
   })
 
   // List all ingest runs, most recent first.

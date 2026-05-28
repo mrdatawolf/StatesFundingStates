@@ -256,6 +256,20 @@
       <option value="returnOnDollar">Return on dollar</option>
       <option value="totalReceivedCents">Total received</option>
       <option value="totalPaidInCents">Total paid in</option>
+      <option value="politicalLean">Political lean</option>
+    </select>
+  </div>
+  <div class="hdr-control" id="voting-yr-ctrl" style="display:none">
+    <label for="voting-yr-sel">Election year:</label>
+    <select id="voting-yr-sel"></select>
+  </div>
+  <div class="hdr-control">
+    <label for="party-filter">Party:</label>
+    <select id="party-filter">
+      <option value="all">All states</option>
+      <option value="republican">Republican</option>
+      <option value="swing">Swing</option>
+      <option value="democrat">Democrat</option>
     </select>
   </div>
 </header>
@@ -298,7 +312,7 @@
 
 <footer>
   <span id="footer-source"></span>
-  <span>Source: USASpending.gov · IRS Statistics of Income · US Census Bureau</span>
+  <span id="footer-sources">Source: USASpending.gov · IRS Statistics of Income · US Census Bureau</span>
 </footer>
 
 <div id="tip"></div>
@@ -311,28 +325,75 @@
 
 <script>
 // ── App state ─────────────────────────────────────────────────────────────────
-let allData    = null;
-let year       = null;
-let sortKey    = 'netPerCapitaCents';
-let sortDir    = 'desc';
-let usGeo      = null;
-let metric     = 'netPerCapitaCents';
-let filterText = '';
+let allData      = null;
+let year         = null;
+let sortKey      = 'netPerCapitaCents';
+let sortDir      = 'desc';
+let usGeo        = null;
+let metric       = 'netPerCapitaCents';
+let filterText   = '';
+let partyFilter  = 'all';    // 'all' | 'republican' | 'swing' | 'democrat'
+let votingYear   = null;     // which election year to use for lean data
 
 // ── Metric config ─────────────────────────────────────────────────────────────
 const METRICS = {
-  netPerCapitaCents:  { label: 'Net per capita',  title: 'Net per capita by state',          kind: 'div0' },
-  netCents:           { label: 'Net total ($B)',   title: 'Net total ($B) by state',          kind: 'div0' },
-  returnOnDollar:     { label: 'Return on dollar', title: 'Return on dollar by state',        kind: 'div1' },
-  totalReceivedCents: { label: 'Total received',   title: 'Total received from federal ($B)', kind: 'blue' },
-  totalPaidInCents:   { label: 'Total paid in',    title: 'Total paid into federal ($B)',     kind: 'orange' },
+  netPerCapitaCents:  { label: 'Net per capita',    title: 'Net per capita by state',          kind: 'div0' },
+  netCents:           { label: 'Net total ($B)',     title: 'Net total ($B) by state',          kind: 'div0' },
+  returnOnDollar:     { label: 'Return on dollar',  title: 'Return on dollar by state',        kind: 'div1' },
+  totalReceivedCents: { label: 'Total received',    title: 'Total received from federal ($B)', kind: 'blue' },
+  totalPaidInCents:   { label: 'Total paid in',     title: 'Total paid into federal ($B)',     kind: 'orange' },
+  politicalLean:      { label: 'Political lean',    title: 'Presidential vote lean by state',  kind: 'political' },
 };
+
+// Returns a lean object {lean, demShare, repShare} for a given state FIPS, or null if no data.
+function getVoting(stateFips) {
+  const vy = votingYear;
+  if (!vy || !allData.voting || !allData.voting[vy]) return null;
+  return allData.voting[vy].find(v => v.stateFips === stateFips) ?? null;
+}
 
 function getValue(row, key) {
   if (key === 'returnOnDollar') {
     return row.totalPaidInCents > 0 ? row.totalReceivedCents / row.totalPaidInCents : null;
   }
+  if (key === 'politicalLean') {
+    const v = getVoting(row.stateFips);
+    return v ? v.lean : null;
+  }
   return row[key] ?? null;
+}
+
+// lean in [-1,1]: negative = Republican, positive = Democrat
+// Colors interpolate: deep red → light purple → deep blue
+function leanColor(lean) {
+  if (lean == null) return '#d4d4d4';
+  // Anchor colors: rep red, swing purple, dem blue
+  const RED    = [178, 34,  34];
+  const PURPLE = [148, 64, 148];
+  const BLUE   = [ 34, 34, 178];
+  const t = Math.max(-1, Math.min(1, lean));
+  let r, g, b;
+  if (t <= 0) {
+    // lerp from PURPLE (t=0) to RED (t=-1)
+    const s = -t;
+    r = Math.round(PURPLE[0] + s * (RED[0] - PURPLE[0]));
+    g = Math.round(PURPLE[1] + s * (RED[1] - PURPLE[1]));
+    b = Math.round(PURPLE[2] + s * (RED[2] - PURPLE[2]));
+  } else {
+    // lerp from PURPLE (t=0) to BLUE (t=1)
+    r = Math.round(PURPLE[0] + t * (BLUE[0] - PURPLE[0]));
+    g = Math.round(PURPLE[1] + t * (BLUE[1] - PURPLE[1]));
+    b = Math.round(PURPLE[2] + t * (BLUE[2] - PURPLE[2]));
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+// Lean category for party filter
+function leanCategory(lean) {
+  if (lean == null)   return 'unknown';
+  if (lean <= -0.10)  return 'republican';
+  if (lean >=  0.10)  return 'democrat';
+  return 'swing';
 }
 
 // Returns the sort value for a row — handles computed metrics (returnOnDollar)
@@ -343,9 +404,15 @@ function getSortVal(row, key) {
 
 // ── Row filtering ─────────────────────────────────────────────────────────────
 function matchesFilter(b) {
-  if (!filterText) return true;
-  const q = filterText.toLowerCase();
-  return b.stateName.toLowerCase().includes(q) || b.stateAbbr.toLowerCase() === q;
+  if (filterText) {
+    const q = filterText.toLowerCase();
+    if (!b.stateName.toLowerCase().includes(q) && b.stateAbbr.toLowerCase() !== q) return false;
+  }
+  if (partyFilter !== 'all') {
+    const v = getVoting(b.stateFips);
+    if (!v || leanCategory(v.lean) !== partyFilter) return false;
+  }
+  return true;
 }
 
 function getRows()         { return (allData[year] || []);                   }
@@ -366,6 +433,14 @@ function fmtPC(cents) {
   if (cents == null) return '—';
   return (cents >= 0 ? '+' : '−') + '$' + Math.round(Math.abs(cents) / 100).toLocaleString();
 }
+function fmtLean(lean) {
+  if (lean == null) return 'no voting data';
+  const pct = Math.abs(lean * 100).toFixed(1);
+  if (lean > 0.005)  return `D+${pct}%`;
+  if (lean < -0.005) return `R+${pct}%`;
+  return 'Even split';
+}
+
 function fmtMetricTip(row, key) {
   const val = getValue(row, key);
   if (val == null) return 'no data';
@@ -375,6 +450,7 @@ function fmtMetricTip(row, key) {
     case 'returnOnDollar':      return `$${val.toFixed(2)} back per $1 paid`;
     case 'totalReceivedCents':  return fmtB(val) + ' received';
     case 'totalPaidInCents':    return fmtB(val) + ' paid in';
+    case 'politicalLean':       return fmtLean(val);
   }
 }
 
@@ -384,6 +460,8 @@ function metricColor(row, rows, key) {
   if (val == null) return '#d4d4d4';
   const { kind } = METRICS[key];
   const vals = rows.map(r => getValue(r, key)).filter(v => v != null);
+
+  if (kind === 'political') return leanColor(val);
 
   if (kind === 'div0') {
     const maxAbs = Math.max(...vals.map(Math.abs), 1);
@@ -408,7 +486,14 @@ function metricColor(row, rows, key) {
 function updateLegend() {
   const strip = document.getElementById('legend-strip');
   const { kind } = METRICS[metric];
-  if (kind === 'div0' || kind === 'div1') {
+  if (kind === 'political') {
+    strip.innerHTML = `
+      <span class="legend-item"><span class="swatch" style="background:${leanColor(-1)}"></span>Strongly Republican</span>
+      <span class="legend-item"><span class="swatch" style="background:${leanColor(-0.5)}"></span>Lean Republican</span>
+      <span class="legend-item"><span class="swatch" style="background:${leanColor(0)}"></span>Swing / even split</span>
+      <span class="legend-item"><span class="swatch" style="background:${leanColor(0.5)}"></span>Lean Democratic</span>
+      <span class="legend-item"><span class="swatch" style="background:${leanColor(1)}"></span>Strongly Democratic</span>`;
+  } else if (kind === 'div0' || kind === 'div1') {
     strip.innerHTML = `
       <span class="legend-item"><span class="swatch" style="background:#e74c3c"></span>Net recipient — receives more than it pays in</span>
       <span class="legend-item"><span class="swatch" style="background:#27ae60"></span>Net donor — pays in more than it receives</span>`;
@@ -498,7 +583,9 @@ async function renderMap(rows) {
     .on('mousemove', (event, d) => {
       const b = byFips.get(String(d.id).padStart(2, '0'));
       if (!b) return;
-      showTip(event, `<strong>${b.stateName}</strong><br>${fmtMetricTip(b, metric)}`);
+      const v = getVoting(b.stateFips);
+      const leanLine = (metric !== 'politicalLean' && v) ? `<br><span style="opacity:0.75">${fmtLean(v.lean)}</span>` : '';
+      showTip(event, `<strong>${b.stateName}</strong><br>${fmtMetricTip(b, metric)}${leanLine}`);
     })
     .on('mouseleave', hideTip);
 }
@@ -605,8 +692,11 @@ function renderBarChart(rows) {
     .text(d => labelFmt(d.val));
 
   row
-    .on('mousemove', (event, d) =>
-      showTip(event, `<strong>${d.name}</strong><br>${fmtMetricTip(d.row, metric)}`))
+    .on('mousemove', (event, d) => {
+      const v = getVoting(d.row.stateFips);
+      const leanLine = (metric !== 'politicalLean' && v) ? `<br><span style="opacity:0.75">${fmtLean(v.lean)}</span>` : '';
+      showTip(event, `<strong>${d.name}</strong><br>${fmtMetricTip(d.row, metric)}${leanLine}`);
+    })
     .on('mouseleave', hideTip);
 }
 
@@ -647,10 +737,25 @@ document.getElementById('yr').addEventListener('change', e => {
 // ── Metric selector — drives map, bar chart, and table sort ──────────────────
 document.getElementById('metric-sel').addEventListener('change', e => {
   metric  = e.target.value;
-  sortKey = metric;
-  sortDir = 'desc';
+  sortKey = metric === 'politicalLean' ? 'stateName' : metric;
+  sortDir = metric === 'politicalLean' ? 'asc' : 'desc';
+  document.getElementById('voting-yr-ctrl').style.display = metric === 'politicalLean' ? '' : 'none';
   render();
   resetScrollHint();
+});
+
+// ── Election year selector ────────────────────────────────────────────────────
+document.getElementById('voting-yr-sel').addEventListener('change', e => {
+  votingYear = +e.target.value;
+  render();
+});
+
+// ── Party filter ──────────────────────────────────────────────────────────────
+document.getElementById('party-filter').addEventListener('change', e => {
+  partyFilter = e.target.value;
+  const filtered = getFilteredRows();
+  renderTable(filtered);
+  renderBarChart(filtered);
 });
 
 // ── State filter ──────────────────────────────────────────────────────────────
@@ -674,6 +779,22 @@ fetch('./data.json')
       opt.value = y; opt.textContent = y;
       sel.appendChild(opt);
     });
+
+    // Append MEDSL to source attribution if voting data is present
+    const votingYears = data.votingYears ?? [];
+    if (votingYears.length > 0) {
+      document.getElementById('footer-sources').textContent =
+        'Source: USASpending.gov · IRS Statistics of Income · US Census Bureau · MIT Election Data + Science Lab (MEDSL)';
+    }
+    if (votingYears.length > 0) {
+      votingYear = votingYears[0]; // most recent first
+      const vSel = document.getElementById('voting-yr-sel');
+      votingYears.forEach(vy => {
+        const opt = document.createElement('option');
+        opt.value = vy; opt.textContent = vy;
+        vSel.appendChild(opt);
+      });
+    }
 
     if (data.generatedAt) {
       const d = new Date(data.generatedAt);
