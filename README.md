@@ -4,7 +4,9 @@
 
 States Funding States pulls federal spending, IRS tax receipts, and Census population data to compute each state's net balance with the federal government, then visualises the flows in an interactive dashboard.
 
-![Static page](https://mrdatawolf.github.io/StatesFundingStates/)
+## Static version
+
+![See a static version here!](https://mrdatawolf.github.io/StatesFundingStates/)
 ---
 
 ## Screenshot
