@@ -70,8 +70,7 @@
 
     /* ── Two-column layout ── */
     .layout {
-      display: grid;
-      grid-template-columns: 468px 1fr;
+      display: flex;
       flex: 1;
       min-height: 0;
       overflow: hidden;
@@ -79,10 +78,14 @@
 
     /* ── Table column ── */
     .table-col {
+      width: 548px;
+      flex-shrink: 0;
       background: #fff;
       border-right: 1px solid #e5e5e5;
       display: flex;
       flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
     }
     .col-heading {
       font-size: 0.65rem;
@@ -122,17 +125,12 @@
       padding: 0.35rem 0.5rem;
       text-align: right;
       border-bottom: 2px solid #ddd;
-      cursor: pointer;
-      user-select: none;
       white-space: nowrap;
       font-size: 11px;
       color: #555;
       z-index: 1;
     }
     thead th:first-child { text-align: left; }
-    thead th:hover { background: #f5f5f5; }
-    .sort-ind { color: #bbb; font-size: 9px; margin-left: 2px; }
-    .sort-ind.active { color: #333; }
 
     tbody tr { border-bottom: 1px solid #f0f0f0; }
     tbody tr:hover { filter: brightness(0.96); }
@@ -143,6 +141,8 @@
 
     /* ── Charts column ── */
     .charts-col {
+      flex: 1;
+      min-height: 0;
       padding: 1.25rem 1.5rem;
       overflow-y: auto;
       display: flex;
@@ -230,10 +230,10 @@
 
     /* ── Responsive ── */
     @media (max-width: 900px) {
-      body   { height: auto; overflow: auto; }
-      .layout { grid-template-columns: 1fr; flex: none; min-height: auto; overflow: visible; }
-      .table-col { border-right: none; border-bottom: 1px solid #e5e5e5; max-height: 360px; }
-      .charts-col { overflow-y: visible; }
+      body       { height: auto; overflow: auto; }
+      .layout    { flex-direction: column; flex: none; min-height: auto; overflow: visible; }
+      .table-col { width: 100%; border-right: none; border-bottom: 1px solid #e5e5e5; max-height: 360px; }
+      .charts-col { overflow-y: visible; min-height: auto; }
     }
   </style>
 </head>
@@ -286,11 +286,11 @@
       <table>
         <thead>
           <tr>
-            <th data-k="stateName">State <span class="sort-ind" id="si-stateName">▼</span></th>
-            <th data-k="totalReceivedCents">Received <span class="sort-ind" id="si-totalReceivedCents">▼</span></th>
-            <th data-k="totalPaidInCents">Paid In <span class="sort-ind" id="si-totalPaidInCents">▼</span></th>
-            <th data-k="netCents">Net <span class="sort-ind" id="si-netCents">▼</span></th>
-            <th data-k="netPerCapitaCents">Per Capita <span class="sort-ind" id="si-netPerCapitaCents">▼</span></th>
+            <th>State</th>
+            <th>Received</th>
+            <th>Paid In</th>
+            <th>Net</th>
+            <th>Per Capita</th>
             <th id="th-lean" style="display:none">Lean</th>
           </tr>
         </thead>
@@ -547,15 +547,6 @@ function renderTable(rows) {
     </tr>`;
   }).join('');
 
-  // Highlight the active sort column if it maps to a table header
-  document.querySelectorAll('thead th[data-k]').forEach(th => {
-    const k   = th.dataset.k;
-    const ind = document.getElementById('si-' + k);
-    if (!ind) return;
-    const active = k === sortKey;
-    ind.textContent = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ▼';
-    ind.className   = 'sort-ind' + (active ? ' active' : '');
-  });
 }
 
 // ── Choropleth (always shows all states) ─────────────────────────────────────
@@ -568,6 +559,11 @@ async function renderMap(rows) {
 
   const el = document.getElementById('map');
   el.innerHTML = '';
+
+  if (metric === 'politicalLean' && (!allData.voting || !votingYear || !allData.voting[votingYear])) {
+    el.innerHTML = '<p style="color:#999;font-size:13px;padding:2rem 0">No voting data in this snapshot. Ingest MEDSL election data and regenerate data.json.</p>';
+    return;
+  }
 
   const W = el.clientWidth || 600;
   const H = Math.round(W * 0.62);
@@ -728,17 +724,6 @@ function resetScrollHint() {
   chartsCol.scrollTop = 0;
   showScrollHint();
 }
-
-// ── Sort wiring (table column headers) ───────────────────────────────────────
-document.querySelectorAll('thead th[data-k]').forEach(th => {
-  th.addEventListener('click', () => {
-    const k = th.dataset.k;
-    if (k === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-    else { sortKey = k; sortDir = 'desc'; }
-    savePrefs();
-    renderTable(getFilteredRows());
-  });
-});
 
 // ── Year selector ─────────────────────────────────────────────────────────────
 document.getElementById('yr').addEventListener('change', e => {

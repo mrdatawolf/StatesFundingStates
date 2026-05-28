@@ -25,7 +25,11 @@ echo "✓  API is up"
 echo "→  Fetching available years..."
 
 YEARS=$(curl -sf "$API/balances/years")
-VOTING_YEARS=$(curl -sf "$API/voting/years" 2>/dev/null || echo "[]")
+VOTING_YEARS=$(curl -s "$API/voting/years" 2>/dev/null || echo "[]")
+case "$VOTING_YEARS" in
+  \[*) ;;
+  *) VOTING_YEARS="[]" ;;
+esac
 
 if [ -z "$YEARS" ] || [ "$YEARS" = "[]" ]; then
   echo ""

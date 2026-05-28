@@ -3,7 +3,15 @@ import { join } from 'path'
 
 // MIT Election Data + Science Lab — Presidential Election Data 1976–present
 // Dataset: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/42MVDX
-// We discover the file ID at runtime via the Dataverse API so we're not coupled to a hardcoded ID.
+//
+// Download flow:
+//   1. POST /api/access/datafile/{id} with guestbook JSON → returns a signed download URL
+//   2. GET the signed URL → actual file bytes
+//
+// Requires a free Harvard Dataverse API key in DATAVERSE_API_KEY env var:
+//   1. Register at https://dataverse.harvard.edu
+//   2. Go to Account → API Token → Generate Token
+//   3. Add DATAVERSE_API_KEY=<token> to .env and restart the API server
 const DATAVERSE_API = 'https://dataverse.harvard.edu/api'
 const DATASET_DOI = 'doi:10.7910/DVN/42MVDX'
 const OUTPUT_FILENAME = 'president.tab'
@@ -14,10 +22,16 @@ export interface MedslScrapeResult {
   filePath: string
 }
 
+// Precondition:  DATAVERSE_API_KEY env var is set (free account at dataverse.harvard.edu)
 // Precondition:  outputDir can be created if it doesn't exist
 // Postcondition: presidential election tab file saved to {outputDir}/president.tab
 // Invariant:     existing file is never overwritten (idempotent re-runs skip it)
 export async function downloadMedslVoting(outputDir: string): Promise<MedslScrapeResult> {
+  const apiKey = process.env['DATAVERSE_API_KEY']
+  if (!apiKey) {
+    throw new Error('DATAVERSE_API_KEY is not set — restart the API server after adding it to .env')
+  }
+
   await mkdir(outputDir, { recursive: true })
 
   const filePath = join(outputDir, OUTPUT_FILENAME)
@@ -26,37 +40,73 @@ export async function downloadMedslVoting(outputDir: string): Promise<MedslScrap
     return { downloaded: false, skipped: true, filePath }
   }
 
-  const fileId = await resolvePresidentialFileId()
-  const downloadUrl = `${DATAVERSE_API}/access/datafile/${fileId}`
+  const { fileId, datasetId } = await resolvePresidentialFile(apiKey)
 
-  const res = await fetch(downloadUrl, { headers: { 'User-Agent': 'StatesFundingStates/1.0' } })
-  if (!res.ok) {
-    throw new Error(`Failed to download MEDSL presidential file: HTTP ${res.status} from ${downloadUrl}`)
+  // Step 1: POST with guestbook response to obtain a signed download URL
+  const guestbookRes = await fetch(`${DATAVERSE_API}/access/datafile/${fileId}`, {
+    method: 'POST',
+    headers: {
+      'User-Agent': 'StatesFundingStates/1.0',
+      'X-Dataverse-key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      datasetId,
+      name: 'StatesFundingStates',
+      email: 'anonymous@example.com',
+      institution: '',
+      position: '',
+      customQuestions: [],
+    }),
+  })
+
+  if (!guestbookRes.ok) {
+    const body = await guestbookRes.text().catch(() => '')
+    throw new Error(`Dataverse guestbook POST failed: HTTP ${guestbookRes.status} — ${body}`)
   }
 
-  const buffer = Buffer.from(await res.arrayBuffer())
+  const guestbookJson = await guestbookRes.json() as { status: string; data?: { signedUrl?: string } }
+  const signedUrl = guestbookJson.data?.signedUrl
+  if (!signedUrl) {
+    throw new Error(`Dataverse guestbook response missing signedUrl: ${JSON.stringify(guestbookJson)}`)
+  }
+
+  // Step 2: GET the signed URL to download the file
+  const fileRes = await fetch(signedUrl, {
+    headers: { 'User-Agent': 'StatesFundingStates/1.0' },
+  })
+  if (!fileRes.ok) {
+    throw new Error(`Dataverse signed URL download failed: HTTP ${fileRes.status}`)
+  }
+
+  const buffer = Buffer.from(await fileRes.arrayBuffer())
   await writeFile(filePath, buffer)
 
   return { downloaded: true, skipped: false, filePath }
 }
 
-// Queries Harvard Dataverse to find the file ID for the presidential election CSV/tab file.
-// The file is named something like "1976-2020-president.tab" or "1976-2024-president.tab".
-async function resolvePresidentialFileId(): Promise<number> {
+// Queries Harvard Dataverse metadata to get the file ID and dataset ID for the presidential file.
+async function resolvePresidentialFile(apiKey: string): Promise<{ fileId: number; datasetId: number }> {
   const url = `${DATAVERSE_API}/datasets/:persistentId/?persistentId=${DATASET_DOI}`
-  const res = await fetch(url, { headers: { 'User-Agent': 'StatesFundingStates/1.0' } })
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'StatesFundingStates/1.0',
+      'X-Dataverse-key': apiKey,
+    },
+  })
   if (!res.ok) {
     throw new Error(`Dataverse metadata request failed: HTTP ${res.status}`)
   }
 
   const meta = await res.json() as DataverseDatasetResponse
+  const datasetId = meta.data?.id
   const files = meta.data?.latestVersion?.files ?? []
 
-  if (files.length === 0) {
-    throw new Error('Dataverse returned no files for the MEDSL dataset. The dataset may have moved or require authentication.')
+  if (!datasetId || files.length === 0) {
+    throw new Error('Dataverse returned no dataset ID or files for the MEDSL dataset.')
   }
 
-  // Match the presidential data file — it contains "president" but not "county" (avoid county-level files)
+  // Match the state-level presidential file — contains "president" but not "county"
   const presidentialFile = files.find((f) => {
     const name = (f.label ?? f.dataFile.filename).toLowerCase()
     return name.includes('president') && !name.includes('county')
@@ -67,11 +117,12 @@ async function resolvePresidentialFileId(): Promise<number> {
     throw new Error(`Could not find presidential state-level file in MEDSL dataset. Found: ${names}`)
   }
 
-  return presidentialFile.dataFile.id
+  return { fileId: presidentialFile.dataFile.id, datasetId }
 }
 
 interface DataverseDatasetResponse {
   data?: {
+    id?: number
     latestVersion?: {
       files?: Array<{
         label: string

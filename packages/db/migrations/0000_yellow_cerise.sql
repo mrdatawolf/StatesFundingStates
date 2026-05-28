@@ -1,3 +1,7 @@
+CREATE TYPE "public"."ingest_source" AS ENUM('usa_spending', 'irs_soi', 'census', 'medsl_voting');
+--> statement-breakpoint
+CREATE TYPE "public"."ingest_status" AS ENUM('pending', 'running', 'complete', 'failed');
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "states" (
 	"fips" char(2) PRIMARY KEY NOT NULL,
 	"name" varchar(100) NOT NULL,
@@ -7,9 +11,9 @@ CREATE TABLE IF NOT EXISTS "states" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ingest_runs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"source" varchar(20) NOT NULL,
+	"source" "ingest_source" NOT NULL,
 	"fiscal_year" integer NOT NULL,
-	"status" varchar(20) DEFAULT 'pending' NOT NULL,
+	"status" "ingest_status" DEFAULT 'pending' NOT NULL,
 	"triggered_by" varchar(100),
 	"started_at" timestamp with time zone,
 	"completed_at" timestamp with time zone,
