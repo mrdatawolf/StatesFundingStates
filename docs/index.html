@@ -23,7 +23,7 @@
     header {
       background: #1a1a2e;
       color: #fff;
-      padding: 1.25rem 2rem;
+      padding: 1.1rem 2rem;
       display: flex;
       align-items: baseline;
       gap: 1.5rem;
@@ -56,7 +56,7 @@
     #legend-strip {
       background: #fff;
       border-bottom: 1px solid #e5e5e5;
-      padding: 0.5rem 2rem;
+      padding: 0.45rem 2rem;
       font-size: 0.75rem;
       color: #555;
       display: flex;
@@ -90,10 +90,28 @@
       text-transform: uppercase;
       letter-spacing: 0.07em;
       color: #888;
-      padding: 0.75rem 1rem 0.5rem;
+      padding: 0.6rem 1rem;
       border-bottom: 1px solid #eee;
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
     }
+    #state-filter {
+      font-size: 0.72rem;
+      padding: 0.18rem 0.4rem;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      outline: none;
+      width: 110px;
+      color: #333;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    #state-filter:focus { border-color: #555; }
+
     .table-scroll { overflow-y: auto; flex: 1; }
 
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -205,7 +223,7 @@
     <select id="yr"></select>
   </div>
   <div class="hdr-control">
-    <label for="metric-sel">Map shows:</label>
+    <label for="metric-sel">View:</label>
     <select id="metric-sel">
       <option value="netPerCapitaCents">Net per capita</option>
       <option value="netCents">Net total ($B)</option>
@@ -220,7 +238,10 @@
 
 <div class="layout">
   <div class="table-col">
-    <div class="col-heading">All States</div>
+    <div class="col-heading">
+      <span>All States</span>
+      <input id="state-filter" type="search" placeholder="Filter states…" autocomplete="off" />
+    </div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -242,13 +263,9 @@
       <div class="chart-title" id="map-title">Net per capita by state</div>
       <div id="map"></div>
     </div>
-    <div class="chart-block" id="block-return">
-      <div class="chart-title">Return on dollar — received per $1 paid in &nbsp;(break-even = $1.00)</div>
-      <div id="chart-return"></div>
-    </div>
-    <div class="chart-block" id="block-net">
-      <div class="chart-title">Net transfer by state ($B) — donors above zero, recipients below</div>
-      <div id="chart-net"></div>
+    <div class="chart-block" id="block-bars">
+      <div class="chart-title" id="bar-title">Net per capita by state</div>
+      <div id="chart-bars"></div>
     </div>
   </div>
 </div>
@@ -262,20 +279,21 @@
 
 <script>
 // ── App state ─────────────────────────────────────────────────────────────────
-let allData = null;
-let year    = null;
-let sortKey = 'netCents';
-let sortDir = 'desc';
-let usGeo   = null;
-let metric  = 'netPerCapitaCents';
+let allData    = null;
+let year       = null;
+let sortKey    = 'netPerCapitaCents';
+let sortDir    = 'desc';
+let usGeo      = null;
+let metric     = 'netPerCapitaCents';
+let filterText = '';
 
-// ── Metric definitions ────────────────────────────────────────────────────────
+// ── Metric config ─────────────────────────────────────────────────────────────
 const METRICS = {
-  netPerCapitaCents:  { label: 'Net per capita',   title: 'Net per capita by state',          kind: 'div0' },
-  netCents:           { label: 'Net total ($B)',    title: 'Net total ($B) by state',          kind: 'div0' },
-  returnOnDollar:     { label: 'Return on dollar',  title: 'Return on dollar by state',        kind: 'div1' },
-  totalReceivedCents: { label: 'Total received',    title: 'Total received from federal ($B)', kind: 'blue' },
-  totalPaidInCents:   { label: 'Total paid in',     title: 'Total paid into federal ($B)',     kind: 'orange' },
+  netPerCapitaCents:  { label: 'Net per capita',  title: 'Net per capita by state',          kind: 'div0' },
+  netCents:           { label: 'Net total ($B)',   title: 'Net total ($B) by state',          kind: 'div0' },
+  returnOnDollar:     { label: 'Return on dollar', title: 'Return on dollar by state',        kind: 'div1' },
+  totalReceivedCents: { label: 'Total received',   title: 'Total received from federal ($B)', kind: 'blue' },
+  totalPaidInCents:   { label: 'Total paid in',    title: 'Total paid into federal ($B)',     kind: 'orange' },
 };
 
 function getValue(row, key) {
@@ -285,7 +303,23 @@ function getValue(row, key) {
   return row[key] ?? null;
 }
 
-// ── Tooltip helpers ───────────────────────────────────────────────────────────
+// Returns the sort value for a row — handles computed metrics (returnOnDollar)
+function getSortVal(row, key) {
+  const v = getValue(row, key);
+  return v ?? -Infinity;
+}
+
+// ── Row filtering ─────────────────────────────────────────────────────────────
+function matchesFilter(b) {
+  if (!filterText) return true;
+  const q = filterText.toLowerCase();
+  return b.stateName.toLowerCase().includes(q) || b.stateAbbr.toLowerCase() === q;
+}
+
+function getRows()         { return (allData[year] || []);                   }
+function getFilteredRows() { return getRows().filter(matchesFilter);          }
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
 const tip = document.getElementById('tip');
 function showTip(e, html) { tip.innerHTML = html; tip.style.display = 'block'; moveTip(e); }
 function moveTip(e) { tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
@@ -312,7 +346,7 @@ function fmtMetricTip(row, key) {
   }
 }
 
-// ── Map color ─────────────────────────────────────────────────────────────────
+// ── Color (shared by map + bar chart) ────────────────────────────────────────
 function metricColor(row, rows, key) {
   const val = getValue(row, key);
   if (val == null) return '#d4d4d4';
@@ -359,19 +393,18 @@ function updateLegend() {
 
 // ── Render all ────────────────────────────────────────────────────────────────
 function render() {
-  const rows = allData[year] || [];
   updateLegend();
-  renderTable(rows);
-  renderMap(rows);
-  renderReturnChart(rows);
-  renderNetChart(rows);
+  const filtered = getFilteredRows();
+  renderTable(filtered);
+  renderMap(getRows());       // map always shows all states
+  renderBarChart(filtered);
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
 function renderTable(rows) {
   const sorted = [...rows].sort((a, b) => {
-    const av = a[sortKey] ?? -Infinity;
-    const bv = b[sortKey] ?? -Infinity;
+    const av = getSortVal(a, sortKey);
+    const bv = getSortVal(b, sortKey);
     const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
     return sortDir === 'asc' ? cmp : -cmp;
   });
@@ -386,16 +419,18 @@ function renderTable(rows) {
     </tr>
   `).join('');
 
+  // Highlight the active sort column if it maps to a table header
   document.querySelectorAll('thead th[data-k]').forEach(th => {
     const k   = th.dataset.k;
     const ind = document.getElementById('si-' + k);
     if (!ind) return;
-    ind.textContent = k === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ▼';
-    ind.className   = 'sort-ind' + (k === sortKey ? ' active' : '');
+    const active = k === sortKey;
+    ind.textContent = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ▼';
+    ind.className   = 'sort-ind' + (active ? ' active' : '');
   });
 }
 
-// ── Choropleth ────────────────────────────────────────────────────────────────
+// ── Choropleth (always shows all states) ─────────────────────────────────────
 async function renderMap(rows) {
   if (!usGeo) {
     usGeo = await d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json');
@@ -411,7 +446,6 @@ async function renderMap(rows) {
   const features = topojson.feature(usGeo, usGeo.objects.states);
   const proj = d3.geoAlbersUsa().fitSize([W, H], features);
   const path = d3.geoPath().projection(proj);
-
   const byFips = new Map(rows.map(b => [b.stateFips, b]));
 
   const svg = d3.select(el).append('svg')
@@ -437,122 +471,143 @@ async function renderMap(rows) {
     .on('mouseleave', hideTip);
 }
 
-// ── Return on dollar chart ────────────────────────────────────────────────────
-function renderReturnChart(rows) {
-  const data = rows
-    .filter(b => b.totalPaidInCents > 0)
-    .map(b => ({ abbr: b.stateAbbr, name: b.stateName, ratio: b.totalReceivedCents / b.totalPaidInCents }))
-    .sort((a, b) => b.ratio - a.ratio);
+// ── Unified bar chart ─────────────────────────────────────────────────────────
+function renderBarChart(rows) {
+  const { kind } = METRICS[metric];
 
-  const el = document.getElementById('chart-return');
+  const data = rows
+    .map(b => ({ abbr: b.stateAbbr, name: b.stateName, val: getValue(b, metric), row: b }))
+    .filter(d => d.val != null)
+    .sort((a, b) => b.val - a.val);
+
+  const el = document.getElementById('chart-bars');
   el.innerHTML = '';
+  document.getElementById('bar-title').textContent = METRICS[metric].title;
+
+  if (data.length === 0) return;
 
   const BAR_H = 11, GAP = 2;
-  const ML = 28, MR = 56, MT = 4, MB = 16;
+  const ML = 28, MR = 72, MT = 4, MB = 20;
   const W  = el.clientWidth || 560;
-  const H  = data.length * (BAR_H + GAP) + MT + MB;
   const IW = W - ML - MR;
-  const xMax = Math.max(d3.max(data, d => d.ratio) * 1.05, 2);
-  const x = d3.scaleLinear().domain([0, xMax]).range([0, IW]);
+  const IH = data.length * (BAR_H + GAP);
+  const H  = IH + MT + MB;
+
+  const vals = data.map(d => d.val);
+
+  // Build x scale, center reference point, and formatters
+  let x, centerVal, tickFmt, labelFmt;
+
+  if (kind === 'div0') {
+    const maxAbs = Math.max(...vals.map(Math.abs), 1);
+    x = d3.scaleLinear().domain([-maxAbs, maxAbs]).range([0, IW]).nice();
+    centerVal = 0;
+    if (metric === 'netPerCapitaCents') {
+      tickFmt  = v => (v === 0 ? '$0' : (v > 0 ? '+' : '−') + '$' + (Math.abs(v) / 100 / 1000).toFixed(0) + 'K');
+      labelFmt = v => fmtPC(v);
+    } else {
+      tickFmt  = v => (v === 0 ? '$0' : (v > 0 ? '+' : '−') + '$' + (Math.abs(v) / 1e11).toFixed(0) + 'B');
+      labelFmt = v => fmtB(v);
+    }
+  } else if (kind === 'div1') {
+    const maxDev = Math.max(...vals.map(v => Math.abs(v - 1)), 0.1);
+    x = d3.scaleLinear().domain([1 - maxDev * 1.1, 1 + maxDev * 1.1]).range([0, IW]).nice();
+    centerVal = 1;
+    tickFmt  = v => `$${v.toFixed(1)}`;
+    labelFmt = v => `$${v.toFixed(2)}`;
+  } else {
+    x = d3.scaleLinear().domain([0, Math.max(...vals) * 1.05]).range([0, IW]).nice();
+    centerVal = null;
+    tickFmt  = v => '$' + (v / 1e11).toFixed(0) + 'B';
+    labelFmt = v => fmtB(v);
+  }
+
+  const xCenter = centerVal != null ? x(centerVal) : 0;
+  const isDiverging = centerVal != null;
 
   const svg = d3.select(el).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('width', '100%');
   const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
 
-  g.append('g').attr('transform', `translate(0,${H - MT - MB})`)
-    .call(d3.axisBottom(x).ticks(4).tickFormat(v => `$${v.toFixed(1)}`))
+  // x-axis
+  g.append('g')
+    .attr('transform', `translate(0,${IH})`)
+    .call(d3.axisBottom(x).ticks(4).tickFormat(tickFmt))
     .call(ax => ax.select('.domain').remove())
     .selectAll('text').attr('font-size', 9);
 
+  // reference / break-even line
   g.append('line')
-    .attr('x1', x(1)).attr('x2', x(1)).attr('y1', 0).attr('y2', H - MT - MB)
+    .attr('x1', xCenter).attr('x2', xCenter)
+    .attr('y1', 0).attr('y2', IH)
     .attr('stroke', '#aaa').attr('stroke-dasharray', '3 3').attr('stroke-width', 1);
 
   const row = g.selectAll('g.r').data(data).join('g').attr('class', 'r')
     .attr('transform', (d, i) => `translate(0,${i * (BAR_H + GAP)})`);
 
-  row.append('text').attr('x', -3).attr('y', BAR_H * 0.78)
+  // State label
+  row.append('text')
+    .attr('x', -3).attr('y', BAR_H * 0.78)
     .attr('text-anchor', 'end').attr('font-size', 8).attr('fill', '#666')
     .text(d => d.abbr);
 
-  row.append('rect').attr('width', d => x(d.ratio)).attr('height', BAR_H)
-    .attr('fill', d => d.ratio > 1 ? '#e74c3c' : '#27ae60').attr('rx', 1);
+  // Bar
+  row.append('rect')
+    .attr('x', d => isDiverging ? Math.min(x(d.val), xCenter) : 0)
+    .attr('width', d => isDiverging ? Math.abs(x(d.val) - xCenter) : x(d.val))
+    .attr('height', BAR_H)
+    .attr('fill', d => metricColor(d.row, rows, metric))
+    .attr('rx', 1);
 
-  row.append('text').attr('x', d => x(d.ratio) + 3).attr('y', BAR_H * 0.82)
+  // Value label — right of bar for positive/right-extending, left for negative/left-extending
+  row.append('text')
+    .attr('x', d => {
+      const barRight = isDiverging ? Math.max(x(d.val), xCenter) : x(d.val);
+      const barLeft  = isDiverging ? Math.min(x(d.val), xCenter) : 0;
+      return (isDiverging && d.val < centerVal) ? barLeft - 3 : barRight + 3;
+    })
+    .attr('text-anchor', d => (isDiverging && d.val < centerVal) ? 'end' : 'start')
+    .attr('y', BAR_H * 0.82)
     .attr('font-size', 8).attr('fill', '#444')
-    .text(d => `$${d.ratio.toFixed(2)}`);
+    .text(d => labelFmt(d.val));
 
   row
-    .on('mousemove', (event, d) => showTip(event, `<strong>${d.name}</strong><br>$${d.ratio.toFixed(2)} back per $1 paid`))
+    .on('mousemove', (event, d) =>
+      showTip(event, `<strong>${d.name}</strong><br>${fmtMetricTip(d.row, metric)}`))
     .on('mouseleave', hideTip);
 }
 
-// ── Net by state bar chart ────────────────────────────────────────────────────
-function renderNetChart(rows) {
-  const data = [...rows]
-    .sort((a, b) => a.netCents - b.netCents)
-    .map(b => ({ abbr: b.stateAbbr, name: b.stateName, net: -b.netCents / 1e11 }));
-
-  const el = document.getElementById('chart-net');
-  el.innerHTML = '';
-
-  const ML = 40, MR = 12, MT = 4, MB = 44;
-  const W  = el.clientWidth || 560;
-  const H  = 200;
-  const IW = W - ML - MR;
-  const IH = H - MT - MB;
-
-  const x = d3.scaleBand().domain(data.map(d => d.abbr)).range([0, IW]).padding(0.12);
-  const yMax = Math.max(d3.max(data, d => Math.abs(d.net)) * 1.05, 1);
-  const y = d3.scaleLinear().domain([-yMax, yMax]).range([IH, 0]).nice();
-
-  const svg = d3.select(el).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H + MT + MB}`).attr('width', '100%');
-  const g = svg.append('g').attr('transform', `translate(${ML},${MT})`);
-
-  g.append('g').call(d3.axisLeft(y).ticks(4).tickFormat(v => `$${v}B`))
-    .call(ax => ax.select('.domain').remove())
-    .selectAll('text').attr('font-size', 9);
-
-  g.append('g').attr('transform', `translate(0,${IH})`)
-    .call(d3.axisBottom(x).tickSize(0))
-    .call(ax => ax.select('.domain').remove())
-    .selectAll('text')
-    .attr('font-size', 7).attr('transform', 'rotate(-55)')
-    .attr('text-anchor', 'end').attr('dy', 2).attr('dx', -2);
-
-  g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', y(0)).attr('y2', y(0))
-    .attr('stroke', '#bbb').attr('stroke-width', 1);
-
-  g.selectAll('rect').data(data).join('rect')
-    .attr('x', d => x(d.abbr)).attr('width', x.bandwidth())
-    .attr('y', d => d.net >= 0 ? y(d.net) : y(0))
-    .attr('height', d => Math.abs(y(d.net) - y(0)))
-    .attr('fill', d => d.net >= 0 ? '#27ae60' : '#e74c3c')
-    .on('mousemove', (event, d) => showTip(event, `<strong>${d.name}</strong><br>${d.net >= 0 ? '+' : ''}${d.net.toFixed(1)}B`))
-    .on('mouseleave', hideTip);
-}
-
-// ── Sort wiring ───────────────────────────────────────────────────────────────
+// ── Sort wiring (table column headers) ───────────────────────────────────────
 document.querySelectorAll('thead th[data-k]').forEach(th => {
   th.addEventListener('click', () => {
     const k = th.dataset.k;
     if (k === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = k; sortDir = 'desc'; }
-    renderTable(allData[year] || []);
+    renderTable(getFilteredRows());
   });
 });
 
-// ── Selectors ─────────────────────────────────────────────────────────────────
+// ── Year selector ─────────────────────────────────────────────────────────────
 document.getElementById('yr').addEventListener('change', e => {
   year = +e.target.value;
   render();
 });
 
+// ── Metric selector — drives map, bar chart, and table sort ──────────────────
 document.getElementById('metric-sel').addEventListener('change', e => {
-  metric = e.target.value;
-  updateLegend();
-  renderMap(allData[year] || []);
+  metric  = e.target.value;
+  sortKey = metric;      // table sort follows the active metric
+  sortDir = 'desc';
+  render();
+});
+
+// ── State filter ──────────────────────────────────────────────────────────────
+document.getElementById('state-filter').addEventListener('input', e => {
+  filterText = e.target.value.trim();
+  const filtered = getFilteredRows();
+  renderTable(filtered);
+  renderBarChart(filtered);
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
