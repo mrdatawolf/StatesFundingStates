@@ -13,7 +13,10 @@
       font-family: system-ui, -apple-system, sans-serif;
       background: #f7f7f7;
       color: #222;
-      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     /* ── Header ── */
@@ -25,6 +28,7 @@
       align-items: baseline;
       gap: 1.5rem;
       flex-wrap: wrap;
+      flex-shrink: 0;
     }
     header h1 { font-size: 1.35rem; font-weight: 700; }
     header p  { font-size: 0.8rem; opacity: 0.65; flex: 1; min-width: 200px; }
@@ -59,6 +63,7 @@
       gap: 1.5rem;
       flex-wrap: wrap;
       align-items: center;
+      flex-shrink: 0;
     }
     .legend-item { display: flex; align-items: center; gap: 0.4rem; }
     .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
@@ -67,7 +72,9 @@
     .layout {
       display: grid;
       grid-template-columns: 468px 1fr;
-      min-height: calc(100vh - 80px);
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
     }
 
     /* ── Table column ── */
@@ -174,12 +181,15 @@
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 0.5rem;
+      flex-shrink: 0;
     }
 
     /* ── Responsive ── */
     @media (max-width: 900px) {
-      .layout { grid-template-columns: 1fr; }
+      body   { height: auto; overflow: auto; }
+      .layout { grid-template-columns: 1fr; flex: none; min-height: auto; overflow: visible; }
       .table-col { border-right: none; border-bottom: 1px solid #e5e5e5; max-height: 360px; }
+      .charts-col { overflow-y: visible; }
     }
   </style>
 </head>
