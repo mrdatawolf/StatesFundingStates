@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, ReferenceLine, ResponsiveContainer,
   ScatterChart, Scatter, CartesianGrid,
 } from 'recharts'
-import type { StateBalance } from '../api'
+import type { StateBalance, VotingResult } from '../api'
 import ChoroplethMap from './ChoroplethMap'
 
 function lerp(t: number, a: [number, number, number], b: [number, number, number]): string {
@@ -31,7 +31,13 @@ function formatK(dollars: number): string {
   return `$${(dollars / 1000).toFixed(0)}K`
 }
 
-export default function ChartsPanel({ balances }: { balances: StateBalance[] }) {
+interface Props {
+  balances: StateBalance[]
+  voting?: VotingResult[]
+  mapColorMode?: 'financial' | 'political'
+}
+
+export default function ChartsPanel({ balances, voting = [], mapColorMode = 'financial' }: Props) {
   // ── Pie data ──────────────────────────────────────────────────────────────
   const positive = [...balances].filter((b) => b.netCents > 0).sort((a, b) => b.netCents - a.netCents)
   const negative = [...balances].filter((b) => b.netCents < 0).sort((a, b) => a.netCents - b.netCents)
@@ -113,8 +119,12 @@ export default function ChartsPanel({ balances }: { balances: StateBalance[] }) 
 
       {/* Choropleth map */}
       <div>
-        <ChartLabel>Net per capita by state — red = recipient, green = donor</ChartLabel>
-        <ChoroplethMap balances={balances} />
+        <ChartLabel>
+          {mapColorMode === 'political'
+            ? 'Presidential vote lean — red = Republican, blue = Democrat, purple = swing'
+            : 'Net per capita by state — red = recipient, green = donor'}
+        </ChartLabel>
+        <ChoroplethMap balances={balances} voting={voting} colorMode={mapColorMode} />
       </div>
 
       {/* Two pies */}

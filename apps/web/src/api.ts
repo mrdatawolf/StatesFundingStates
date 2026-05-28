@@ -15,7 +15,7 @@ export interface StateBalance {
 
 export interface IngestRun {
   id: string
-  source: 'usa_spending' | 'irs_soi' | 'census'
+  source: 'usa_spending' | 'irs_soi' | 'census' | 'medsl_voting'
   fiscalYear: number
   status: 'pending' | 'running' | 'complete' | 'failed'
   triggeredBy: string | null
@@ -27,6 +27,20 @@ export interface IngestRun {
 export interface CollectorResult {
   ingestRunId: string
   rowsWritten: number
+}
+
+export interface VotingResult {
+  stateFips: string
+  stateName: string
+  stateAbbr: string
+  electionYear: number
+  demVotes: number
+  repVotes: number
+  otherVotes: number
+  totalVotes: number
+  demShare: number | null
+  repShare: number | null
+  lean: number | null  // (demVotes - repVotes) / totalVotes, range [-1, 1]
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -80,6 +94,18 @@ export const api = {
       scrape: { downloaded: number; skipped: number; failed: string[] }
       ingest: { ingestRunId: string; rowsWritten: number; parseErrors: string[] }
     }>(`${BASE}/ingest/irs-soi/scrape?year=${fiscalYear}`, { method: 'POST' }),
+
+  getVotingYears: () =>
+    request<number[]>(`${BASE}/voting/years`),
+
+  getVoting: (electionYear: number) =>
+    request<VotingResult[]>(`${BASE}/voting?year=${electionYear}`),
+
+  scrapeMedslVoting: () =>
+    request<{
+      scrape: { downloaded: boolean; skipped: boolean; filePath: string }
+      ingest: { ingestRunId: string; rowsWritten: number }
+    }>(`${BASE}/ingest/medsl-voting/scrape`, { method: 'POST' }),
 
   getIngestRuns: () =>
     request<IngestRun[]>(`${BASE}/ingest/runs`),

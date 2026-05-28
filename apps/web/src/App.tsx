@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { api, type StateBalance } from './api'
+import { api, type StateBalance, type VotingResult } from './api'
 import AdminPanel from './components/AdminPanel'
 import ChartsPanel from './components/ChartsPanel'
 
@@ -15,8 +15,24 @@ function formatDollarsPerCapita(cents: number): string {
   return `${sign}$${dollars.toLocaleString()}`
 }
 
+function fmtLean(lean: number | null): string {
+  if (lean == null) return '—'
+  const pct = (Math.abs(lean) * 100).toFixed(1)
+  if (lean > 0.005)  return `D+${pct}%`
+  if (lean < -0.005) return `R+${pct}%`
+  return 'Even'
+}
+
+function leanCategory(lean: number | null): 'republican' | 'swing' | 'democrat' | null {
+  if (lean == null) return null
+  if (lean <= -0.10) return 'republican'
+  if (lean >=  0.10) return 'democrat'
+  return 'swing'
+}
+
 type SortKey = 'stateName' | 'totalReceivedCents' | 'totalPaidInCents' | 'netCents' | 'netPerCapitaCents'
 type SortDir = 'asc' | 'desc'
+type PartyFilter = 'all' | 'republican' | 'swing' | 'democrat'
 
 export default function App() {
   const [balances, setBalances] = useState<StateBalance[]>([])
@@ -27,15 +43,23 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>('netCents')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
+  const [voting, setVoting] = useState<VotingResult[]>([])
+  const [votingYears, setVotingYears] = useState<number[]>([])
+  const [selectedVotingYear, setSelectedVotingYear] = useState<number | null>(null)
+  const [partyFilter, setPartyFilter] = useState<PartyFilter>('all')
+  const [mapColorMode, setMapColorMode] = useState<'financial' | 'political'>('financial')
+
   const loadYears = useCallback(async () => {
     try {
-      const data = await api.getYears()
-      setYears(data)
-      if (data[0] != null && selectedYear == null) setSelectedYear(data[0])
+      const [balYears, voteYears] = await Promise.all([api.getYears(), api.getVotingYears()])
+      setYears(balYears)
+      setVotingYears(voteYears)
+      if (balYears[0] != null && selectedYear == null) setSelectedYear(balYears[0])
+      if (voteYears[0] != null && selectedVotingYear == null) setSelectedVotingYear(voteYears[0])
     } catch {
       setError('Could not load available years')
     }
-  }, [selectedYear])
+  }, [selectedYear, selectedVotingYear])
 
   const loadBalances = useCallback(async () => {
     if (selectedYear == null) return
@@ -49,14 +73,33 @@ export default function App() {
     }
   }, [selectedYear])
 
+  const loadVoting = useCallback(async () => {
+    if (selectedVotingYear == null) return
+    try {
+      setVoting(await api.getVoting(selectedVotingYear))
+    } catch {
+      // Voting data is optional — don't error-block the main view
+    }
+  }, [selectedVotingYear])
+
+  const voteByFips = useMemo(() => new Map(voting.map((v) => [v.stateFips, v])), [voting])
+
+  const filteredBalances = useMemo(() => {
+    if (partyFilter === 'all') return balances
+    return balances.filter((b) => {
+      const v = voteByFips.get(b.stateFips)
+      return leanCategory(v?.lean ?? null) === partyFilter
+    })
+  }, [balances, partyFilter, voteByFips])
+
   const sortedBalances = useMemo(() => {
-    return [...balances].sort((a, b) => {
+    return [...filteredBalances].sort((a, b) => {
       const av = a[sortKey] ?? -Infinity
       const bv = b[sortKey] ?? -Infinity
       const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number)
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [balances, sortKey, sortDir])
+  }, [filteredBalances, sortKey, sortDir])
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
@@ -66,10 +109,12 @@ export default function App() {
   const handleDataChanged = useCallback(async () => {
     await loadYears()
     await loadBalances()
-  }, [loadYears, loadBalances])
+    await loadVoting()
+  }, [loadYears, loadBalances, loadVoting])
 
   useEffect(() => { loadYears() }, [])
   useEffect(() => { loadBalances() }, [selectedYear])
+  useEffect(() => { loadVoting() }, [selectedVotingYear])
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
@@ -81,20 +126,58 @@ export default function App() {
           <span style={{ color: '#27ae60' }}> Green</span> = net donor.
         </p>
 
-        {years.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <label htmlFor="year-select">Fiscal Year: </label>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'center' }}>
+          {years.length > 0 && (
+            <div>
+              <label htmlFor="year-select" style={{ fontSize: 13, marginRight: 4 }}>Fiscal Year:</label>
+              <select
+                id="year-select"
+                value={selectedYear ?? ''}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+              >
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          )}
+          {votingYears.length > 0 && (
+            <div>
+              <label htmlFor="voting-year-select" style={{ fontSize: 13, marginRight: 4 }}>Election Year:</label>
+              <select
+                id="voting-year-select"
+                value={selectedVotingYear ?? ''}
+                onChange={(e) => setSelectedVotingYear(parseInt(e.target.value, 10))}
+              >
+                {votingYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label htmlFor="party-filter" style={{ fontSize: 13, marginRight: 4 }}>Party:</label>
             <select
-              id="year-select"
-              value={selectedYear ?? ''}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+              id="party-filter"
+              value={partyFilter}
+              onChange={(e) => setPartyFilter(e.target.value as PartyFilter)}
             >
-              {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
+              <option value="all">All states</option>
+              <option value="republican">Republican</option>
+              <option value="swing">Swing</option>
+              <option value="democrat">Democrat</option>
             </select>
           </div>
-        )}
+          {voting.length > 0 && (
+            <div>
+              <label htmlFor="map-color" style={{ fontSize: 13, marginRight: 4 }}>Map color:</label>
+              <select
+                id="map-color"
+                value={mapColorMode}
+                onChange={(e) => setMapColorMode(e.target.value as 'financial' | 'political')}
+              >
+                <option value="financial">Financial (red/green)</option>
+                <option value="political">Political lean (red/purple/blue)</option>
+              </select>
+            </div>
+          )}
+        </div>
 
         {error && <p style={{ color: 'red' }}>{error}</p>}
         {loading && <p>Loading…</p>}
@@ -125,31 +208,44 @@ export default function App() {
                       {label} {sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : <span style={{ color: '#ccc' }}>▼</span>}
                     </th>
                   ))}
+                  {voting.length > 0 && (
+                    <th style={{ padding: '0.25rem 0.4rem', whiteSpace: 'nowrap', color: '#666' }}>
+                      Lean ({selectedVotingYear})
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {sortedBalances.map((b) => (
-                  <tr
-                    key={b.stateFips}
-                    style={{
-                      borderBottom: '1px solid #eee',
-                      background: b.netCents > 0 ? '#fff5f5' : '#f0fff4',
-                    }}
-                  >
-                    <td style={{ padding: '0.2rem 0.4rem' }}>{b.stateName} ({b.stateAbbr})</td>
-                    <td style={{ padding: '0.2rem 0.4rem' }}>{formatDollars(b.totalReceivedCents)}</td>
-                    <td style={{ padding: '0.2rem 0.4rem' }}>{formatDollars(b.totalPaidInCents)}</td>
-                    <td style={{ padding: '0.2rem 0.4rem', fontWeight: 'bold' }}>{formatDollars(b.netCents)}</td>
-                    <td style={{ padding: '0.2rem 0.4rem' }}>
-                      {b.netPerCapitaCents != null ? formatDollarsPerCapita(b.netPerCapitaCents) : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {sortedBalances.map((b) => {
+                  const v = voteByFips.get(b.stateFips)
+                  return (
+                    <tr
+                      key={b.stateFips}
+                      style={{
+                        borderBottom: '1px solid #eee',
+                        background: b.netCents > 0 ? '#fff5f5' : '#f0fff4',
+                      }}
+                    >
+                      <td style={{ padding: '0.2rem 0.4rem' }}>{b.stateName} ({b.stateAbbr})</td>
+                      <td style={{ padding: '0.2rem 0.4rem' }}>{formatDollars(b.totalReceivedCents)}</td>
+                      <td style={{ padding: '0.2rem 0.4rem' }}>{formatDollars(b.totalPaidInCents)}</td>
+                      <td style={{ padding: '0.2rem 0.4rem', fontWeight: 'bold' }}>{formatDollars(b.netCents)}</td>
+                      <td style={{ padding: '0.2rem 0.4rem' }}>
+                        {b.netPerCapitaCents != null ? formatDollarsPerCapita(b.netPerCapitaCents) : '—'}
+                      </td>
+                      {voting.length > 0 && (
+                        <td style={{ padding: '0.2rem 0.4rem', color: v?.lean != null ? (v.lean > 0 ? '#0052a5' : '#b22222') : '#999' }}>
+                          {fmtLean(v?.lean ?? null)}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-              <ChartsPanel balances={balances} />
+              <ChartsPanel balances={balances} voting={voting} mapColorMode={mapColorMode} />
             </div>
           </div>
         )}

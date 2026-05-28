@@ -25,6 +25,7 @@ echo "✓  API is up"
 echo "→  Fetching available years..."
 
 YEARS=$(curl -sf "$API/balances/years")
+VOTING_YEARS=$(curl -sf "$API/voting/years" 2>/dev/null || echo "[]")
 
 if [ -z "$YEARS" ] || [ "$YEARS" = "[]" ]; then
   echo ""
@@ -34,21 +35,31 @@ if [ -z "$YEARS" ] || [ "$YEARS" = "[]" ]; then
   exit 1
 fi
 
-echo "   Years: $YEARS"
+echo "   Balance years: $YEARS"
+echo "   Voting years:  ${VOTING_YEARS}"
 echo "→  Building docs/data.json..."
 
 node --input-type=module << EOF
 import { writeFileSync } from 'node:fs';
 
-const api    = "${API}";
-const years  = ${YEARS};
-const result = { years, generatedAt: new Date().toISOString() };
+const api         = "${API}";
+const years       = ${YEARS};
+const votingYears = ${VOTING_YEARS};
+const result      = { years, votingYears, generatedAt: new Date().toISOString() };
 
 for (const y of years) {
   const r = await fetch(\`\${api}/balances?year=\${y}\`);
   if (!r.ok) throw new Error(\`/balances?year=\${y} returned \${r.status}\`);
   result[y] = await r.json();
-  console.log(\`   \${y}: \${result[y].length} states\`);
+  console.log(\`   balance \${y}: \${result[y].length} states\`);
+}
+
+result.voting = {};
+for (const vy of votingYears) {
+  const r = await fetch(\`\${api}/voting?year=\${vy}\`);
+  if (!r.ok) throw new Error(\`/voting?year=\${vy} returned \${r.status}\`);
+  result.voting[vy] = await r.json();
+  console.log(\`   voting  \${vy}: \${result.voting[vy].length} states\`);
 }
 
 writeFileSync('${DOCS}/data.json', JSON.stringify(result));

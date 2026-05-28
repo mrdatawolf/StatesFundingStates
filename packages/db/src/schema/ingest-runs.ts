@@ -1,6 +1,6 @@
 import { pgTable, uuid, integer, varchar, timestamp, text } from 'drizzle-orm/pg-core'
 
-export type IngestSource = 'usa_spending' | 'irs_soi' | 'census'
+export type IngestSource = 'usa_spending' | 'irs_soi' | 'census' | 'medsl_voting'
 export type IngestStatus = 'pending' | 'running' | 'complete' | 'failed'
 
 export const ingestRuns = pgTable('ingest_runs', {
