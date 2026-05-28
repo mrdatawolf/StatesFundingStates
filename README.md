@@ -97,6 +97,9 @@ CENSUS_API_KEY=your_key_here
 
 The other variables have sensible defaults and can be left as-is for local development.
 
+If you fork this repo and enable GitHub Pages,
+delete or update the CNAME file to use your own domain.
+
 ### 3. Run the API server
 
 ```bash
